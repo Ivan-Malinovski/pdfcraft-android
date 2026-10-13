@@ -23,6 +23,9 @@ class TextSelectionState(private val engine: Engine, private val doc: ULong, pri
     var selection by mutableStateOf<Selection?>(null)
         private set
 
+    /** Where a handle is being dragged (screen), for the magnifier over it; null when none is. */
+    var magnifierAt by mutableStateOf<androidx.compose.ui.geometry.Offset?>(null)
+
     /** The glyph the selection started from, which stays put while the other handle moves. */
     private var anchor = 0
 

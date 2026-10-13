@@ -82,6 +82,9 @@ fun ViewerTopBar(
     moreOpen: Boolean,
     /** A tool with its own title (Edit PDF): Done, the title and Undo only. */
     title: String? = null,
+    /** What Undo and Redo would take back or bring back, for their menu. */
+    undoLabel: String? = null,
+    redoLabel: String? = null,
 ) {
     val c = pdfColors
     Row(
@@ -101,7 +104,7 @@ fun ViewerTopBar(
         if (title != null) {
             Spacer(Modifier.width(6.dp))
             Text(title, color = c.label, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            UndoMenuButton(canUndo, canRedo, onUndo, onRedo)
+            UndoMenuButton(canUndo, canRedo, onUndo, onRedo, undoLabel, redoLabel)
             Spacer(Modifier.width(10.dp))
             return@Row
         }
@@ -123,7 +126,7 @@ fun ViewerTopBar(
                 BarIcon(LucideIcons.Redo2, "Redo", onRedo, enabled = canRedo)
             }
         } else if (canUndo) {
-            UndoMenuButton(canUndo, canRedo, onUndo, onRedo)
+            UndoMenuButton(canUndo, canRedo, onUndo, onRedo, undoLabel, redoLabel)
         }
         if (onSearch != null) BarIcon(LucideIcons.Search, "Find in document", onSearch)
         BarIcon(LucideIcons.Share2, "Share", onShare)
@@ -134,7 +137,7 @@ fun ViewerTopBar(
 
 /** Undo with a corner mark: a tap opens Undo and Redo. */
 @Composable
-fun UndoMenuButton(canUndo: Boolean, canRedo: Boolean, onUndo: () -> Unit, onRedo: () -> Unit) {
+fun UndoMenuButton(canUndo: Boolean, canRedo: Boolean, onUndo: () -> Unit, onRedo: () -> Unit, undoLabel: String? = null, redoLabel: String? = null) {
     val c = pdfColors
     var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box {
@@ -151,11 +154,11 @@ fun UndoMenuButton(canUndo: Boolean, canRedo: Boolean, onUndo: () -> Unit, onRed
         }
         androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = c.menu) {
             androidx.compose.material3.DropdownMenuItem(
-                text = { Text("Undo", color = c.text) }, enabled = canUndo,
+                text = { Text(undoLabel?.let { "Undo $it" } ?: "Undo", color = c.text) }, enabled = canUndo,
                 leadingIcon = { Icon(LucideIcons.Undo2, null, tint = c.icon) }, onClick = { open = false; onUndo() },
             )
             androidx.compose.material3.DropdownMenuItem(
-                text = { Text("Redo", color = c.text) }, enabled = canRedo,
+                text = { Text(redoLabel?.let { "Redo $it" } ?: "Redo", color = c.text) }, enabled = canRedo,
                 leadingIcon = { Icon(LucideIcons.Redo2, null, tint = c.icon) }, onClick = { open = false; onRedo() },
             )
         }

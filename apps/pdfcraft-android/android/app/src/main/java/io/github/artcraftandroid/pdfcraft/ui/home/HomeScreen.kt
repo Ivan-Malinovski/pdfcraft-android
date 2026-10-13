@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -148,9 +149,21 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit) {
     var fabMenu by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
-    LaunchedEffect(tab) { if (tab == 2) vm.scanLocal() }
+    var confirmDeleteSelected by remember { mutableStateOf(false) }
+    LaunchedEffect(tab) { if (tab == 2) vm.scanLocal(); vm.selectedFiles.clear() }
+    androidx.activity.compose.BackHandler(enabled = vm.selectedFiles.isNotEmpty()) { vm.selectedFiles.clear() }
+    if (confirmDeleteSelected) {
+        val rows = vm.selectedFiles.values.toList()
+        io.github.artcraftandroid.pdfcraft.ui.PdfDialog(
+            onDismiss = { confirmDeleteSelected = false },
+            title = if (rows.size == 1) "Delete 1 file?" else "Delete ${rows.size} files?",
+            confirm = "Delete", destructive = true,
+            onConfirm = { confirmDeleteSelected = false; rows.forEach(vm::deleteFile); vm.selectedFiles.clear() },
+        ) { Text("They are removed from this phone.", color = c.text, fontSize = 14.sp) }
+    }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeTopPadding()) {
+            if (vm.selectedFiles.isNotEmpty()) SelectionBar(vm, recent = tab == 0, onDelete = { confirmDeleteSelected = true }) else
             Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Image(painterResource(R.drawable.ic_launcher_tile), null, modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)))
                 Spacer(Modifier.width(10.dp))
@@ -330,9 +343,19 @@ fun FileThumb(vm: AppViewModel, path: String?, width: Int, height: Int) {
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun FileListRow(vm: AppViewModel, r: FileRow, recent: Boolean = false) {
     val c = pdfColors
-    Row(Modifier.fillMaxWidth().clickable(onClick = r.open).padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    val selecting = vm.selectedFiles.isNotEmpty()
+    val ticked = r.key in vm.selectedFiles
+    // a long press ticks the file (several can then be shared, combined or deleted together)
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (ticked) c.toolAccent.copy(alpha = 0.12f) else Color.Transparent)
+            .combinedClickable(onClick = { if (selecting) vm.toggleSelected(r) else r.open() }, onLongClick = { vm.toggleSelected(r) })
+            .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) { FileThumb(vm, r.thumbPath, 36, 42) }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -351,7 +374,43 @@ fun FileListRow(vm: AppViewModel, r: FileRow, recent: Boolean = false) {
                 Text(listOfNotNull("PDF", whenLabel(r.date), r.size.takeIf { it > 0 }?.let { formatSize(it) }).joinToString("  •  "), color = c.textTertiary, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
             }
         }
-        BarIcon(LucideIcons.EllipsisVertical, "More options for ${r.name}", { vm.fileSheet = r to recent })
+        if (selecting) {
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { SelectBox(ticked) }
+        } else {
+            BarIcon(LucideIcons.EllipsisVertical, "More options for ${r.name}", { vm.fileSheet = r to recent })
+        }
+    }
+}
+
+/** A round tick for a ticked file, an empty ring for the others. */
+@Composable
+private fun SelectBox(ticked: Boolean) {
+    val c = pdfColors
+    Box(
+        Modifier.size(22.dp).clip(CircleShape).background(if (ticked) c.toolAccent else Color.Transparent)
+            .border(2.dp, if (ticked) c.toolAccent else c.textSecondary, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { if (ticked) Icon(LucideIcons.Check, null, tint = Color.White, modifier = Modifier.size(14.dp)) }
+}
+
+/** Home's bar while files are ticked: how many, Share, Combine, and the rest in a menu. */
+@Composable
+private fun SelectionBar(vm: AppViewModel, recent: Boolean, onDelete: () -> Unit) {
+    val c = pdfColors
+    val rows = vm.selectedFiles.values.toList()
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        BarIcon(LucideIcons.X, "Clear selection", { vm.selectedFiles.clear() })
+        Text(if (rows.size == 1) "1 file selected" else "${rows.size} files selected", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 8.dp))
+        BarIcon(LucideIcons.Share2, "Share", { vm.shareFiles(rows); vm.selectedFiles.clear() })
+        if (rows.size >= 2) BarIcon(LucideIcons.Combine, "Combine files", { vm.combineSelected(rows); vm.selectedFiles.clear() })
+        Box {
+            BarIcon(LucideIcons.EllipsisVertical, "More options", { menu = true })
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = c.surface) {
+                if (recent) DropdownMenuItem(text = { Text("Remove from recent") }, onClick = { menu = false; vm.removeRecents(rows); vm.selectedFiles.clear() })
+                DropdownMenuItem(text = { Text("Delete", color = c.red) }, onClick = { menu = false; onDelete() })
+            }
+        }
     }
 }
 

@@ -394,11 +394,15 @@ fun BoxScope.SelectionHandles(doc: OpenDocument, sel: Selection) {
                 .offset { IntOffset((anchor.x - size / 2f).roundToInt(), anchor.y.roundToInt()) }
                 .size(20.dp)
                 .pointerInput(sel.range.page, start) {
-                    detectDragGestures(onDragEnd = { drag = Offset.Zero }, onDragCancel = { drag = Offset.Zero }) { change, d ->
+                    detectDragGestures(
+                        onDragEnd = { drag = Offset.Zero; doc.selection.magnifierAt = null },
+                        onDragCancel = { drag = Offset.Zero; doc.selection.magnifierAt = null },
+                    ) { change, d ->
                         change.consume()
                         drag += d
                         // aim at the middle of the line the handle is under
                         val target = Offset(anchor.x, anchor.y - lineHeight / 2f) + drag
+                        doc.selection.magnifierAt = target
                         doc.viewer.screenToPage(target, nearest = true)?.let { doc.selection.dragHandle(start, it) }
                     }
                 }

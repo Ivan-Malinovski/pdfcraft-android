@@ -124,8 +124,25 @@ fun CommentPanel(vm: AppViewModel, doc: OpenDocument, c: CommentInfo) {
                 }
             }
             if (palette) {
+                // the comment's colour, and as the reference also offers there its opacity and,
+                // for drawings and shapes, its line width
+                val shown = c.color?.let { Color(0xFF000000 or it.toLong()) } ?: Color.Transparent
                 Spacer(Modifier.height(8.dp))
-                ColorGrid(c.color?.let { Color(0xFF000000 or it.toLong()) } ?: Color.Transparent) { vm.recolorComment(doc, c, it); palette = false }
+                ColorGrid(shown) { vm.recolorComment(doc, c, it) }
+                if (c.subtype != "FreeText") {
+                    var opacity by remember(c.page, c.index) { mutableStateOf(c.opacity) }
+                    LaunchedEffect(opacity) {
+                        if (opacity == c.opacity) return@LaunchedEffect
+                        kotlinx.coroutines.delay(300)
+                        vm.styleComment(doc, c, mapOf("opacity" to opacity.toDouble()))
+                    }
+                    Text("Opacity", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 78.dp, top = 16.dp, bottom = 8.dp))
+                    OpacitySlider(shown, opacity) { opacity = it }
+                }
+                if (c.width != null && c.subtype in LineComments) {
+                    Text("Line thickness", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp))
+                    InkWidthRow(shown, InkWidths.minByOrNull { kotlin.math.abs(it - (c.width ?: 0f)) }) { vm.styleComment(doc, c, mapOf("width" to it.toDouble())) }
+                }
                 Spacer(Modifier.height(8.dp))
             }
             Column(Modifier.weight(1f).verticalScroll(scroll)) {
@@ -214,3 +231,6 @@ fun CommentPanel(vm: AppViewModel, doc: OpenDocument, c: CommentInfo) {
         }
     }
 }
+
+/** Comments drawn with a line whose width can be changed. */
+private val LineComments = setOf("Ink", "Line", "Square", "Circle", "Polygon", "PolyLine")

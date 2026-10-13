@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.magnifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.imePadding
 import io.github.artcraftandroid.pdfcraft.ui.LucideIcons
@@ -118,7 +119,12 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     // Reopen where the reader left off.
     LaunchedEffect(doc) {
         snapshotFlow { doc.viewer.viewW }.collect { w ->
-            if (w > 0f) vm.pendingPage?.let { p -> doc.viewer.goToPage(p); vm.pendingPage = null }
+            if (w > 0f) vm.pendingPage?.let { p ->
+                val spot = vm.pendingSpot
+                if (spot != null) doc.viewer.showSpot(p, spot.first, spot.second, spot.third) else doc.viewer.goToPage(p)
+                vm.pendingPage = null
+                vm.pendingSpot = null
+            }
         }
     }
 
@@ -158,7 +164,16 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(c.desk)) {
+    // a magnifier over the text while a selection handle is dragged, as the reference shows one
+    Box(
+        Modifier.fillMaxSize().background(c.desk).magnifier(
+            sourceCenter = { selection.magnifierAt ?: Offset.Unspecified },
+            magnifierCenter = { selection.magnifierAt?.let { it - Offset(0f, with(density) { 56.dp.toPx() }) } ?: Offset.Unspecified },
+            zoom = 1.25f,
+            size = androidx.compose.ui.unit.DpSize(120.dp, 44.dp),
+            cornerRadius = 22.dp,
+        ),
+    ) {
         val gesturesForTool = ctl.tool == ViewerTool.None || ctl.tool == ViewerTool.Edit
         if (vm.readingMode) ReadingModeContent(
             vm, doc,
@@ -189,10 +204,11 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             },
             // a double tap zooms with the bars out of the way, as the reference's does
             onDoubleTap = { if (ctl.tool == ViewerTool.None && !ctl.searching) ctl.barsVisible = false },
-            onLongPress = { _, at ->
+            onLongPress = { p, at ->
                 if (at != null) scope.launch {
                     val slop = 12f / doc.viewer.pixelsPerPoint(at.page).coerceAtLeast(0.1f) * density.density
-                    selection.selectWordAt(at, slop)
+                    // no word there: a picture, or the page menu, as the reference's long press
+                    if (!selection.selectWordAt(at, slop) && ctl.tool == ViewerTool.None && !vm.readingMode) vm.longPressPage(doc, at, p)
                 }
             },
             overlay = {
@@ -213,6 +229,10 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         vm.fillTextPrompt?.takeIf { it.doc === doc }?.let { TextEntry(vm, it, onDone = vm::postFillText) }
         vm.addTextPrompt?.takeIf { it.doc === doc }?.let { TextEntry(vm, it, onDone = vm::postAddText) }
         vm.fieldEdit?.takeIf { it.doc === doc }?.let { FieldEditor(vm, it) }
+        // a Fill & Sign element can be dragged and, for boxes, resized (a comment's: over its panel, below)
+        if (ctl.tool == ViewerTool.FillSign) vm.selectedFill?.let { c ->
+            CommentDragOverlay(doc, c, onMove = { dx, dy -> vm.moveFill(doc, c, dx, dy) }, onResize = { vm.resizeFill(doc, c, it) })
+        }
         if (ctl.tool == ViewerTool.FillSign) vm.selectedFill?.let { FillElementMenu(vm, doc, it) }
 
         // Scrubber and page pill (continuous, three pages or more).
@@ -296,8 +316,9 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                     if (fa != null) FieldTopBar(fa) else ViewerTopBar(
                         toolActive = ctl.tool != ViewerTool.None,
                         doneIsCheck = ctl.tool != ViewerTool.Comment,
-                        canUndo = doc.info.undo != null,
-                        canRedo = doc.info.redo != null,
+                        // while drawing, the strokes not yet added have their own undo and redo
+                        canUndo = doc.localUndo?.canUndo?.invoke() ?: (doc.info.undo != null),
+                        canRedo = doc.localUndo?.canRedo?.invoke() ?: (doc.info.redo != null),
                         onBack = { if (ctl.tool != ViewerTool.None) vm.leaveTool(doc) else vm.closeDocument() },
                         onUndo = { vm.undo(doc) },
                         onRedo = { vm.redo(doc) },
@@ -313,6 +334,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                         onMore = { ctl.sheet = if (ctl.sheet == ViewerSheet.More) ViewerSheet.None else ViewerSheet.More },
                         moreOpen = ctl.sheet == ViewerSheet.More,
                         title = if (ctl.tool == ViewerTool.Edit) "Edit PDF" else null,
+                        undoLabel = if (doc.localUndo != null) "Drawing" else doc.info.undo,
+                        redoLabel = if (doc.localUndo != null) "Drawing" else doc.info.redo,
                     )
                 }
             }
@@ -349,7 +372,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         // Text selection's menu.
         selection.selection?.let { sel ->
             SelectionHandles(doc, sel)
-            SelectionMenu(vm, doc, sel)
+            // out of the way while a handle is dragged; back where the selection ends
+            if (selection.magnifierAt == null) SelectionMenu(vm, doc, sel)
         }
 
         // Sheets and dialogs.
@@ -365,10 +389,25 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             }
         }
         if (ctl.sheet == ViewerSheet.Comments) CommentListScreen(vm, doc)
+        vm.pageMenu?.takeIf { it.doc === doc }?.let { PageMenuView(vm, it) }
+        if (vm.imageSource?.first === doc) {
+            io.github.artcraftandroid.pdfcraft.ui.PdfSheet(onDismiss = { vm.imageSource = null }, dim = true) {
+                io.github.artcraftandroid.pdfcraft.ui.SheetTitle("Add image")
+                io.github.artcraftandroid.pdfcraft.ui.SheetRow(LucideIcons.Images, "From photos", { vm.addImageFrom(camera = false) })
+                io.github.artcraftandroid.pdfcraft.ui.SheetRow(LucideIcons.Camera, "From camera", { vm.addImageFrom(camera = true) })
+                Spacer(Modifier.height(12.dp))
+            }
+        }
         vm.notePrompt?.takeIf { it.doc === doc }?.let { NoteSheet(vm, it) }
         vm.voicePrompt?.takeIf { it.doc === doc }?.let { VoiceSheet(vm, it) }
         if (vm.micRationale) MicRationaleDialog(vm)
         vm.selectedComment?.takeIf { it.first === doc }?.let { (_, cm) -> CommentPanel(vm, doc, cm) }
+        // over the panel's tap-to-close area, but only where the comment is: drag it to move, corners to resize
+        if (ctl.tool == ViewerTool.None && doc.info.allowsAnnotation) {
+            vm.selectedComment?.takeIf { it.first === doc }?.second?.let { c ->
+                CommentDragOverlay(doc, c, onMove = { dx, dy -> vm.moveComment(doc, c, dx, dy) }, onResize = { vm.resizeComment(doc, c, it) })
+            }
+        }
         vm.replyPrompt?.takeIf { it.doc === doc }?.let { ReplySheet(vm, it) }
         vm.readAloud?.let { ReadAloudBar(vm, doc, it) }
         if (ctl.goToPage) GoToPageDialog(doc, onDismiss = { ctl.goToPage = false })

@@ -1268,3 +1268,19 @@ fn cached_appearances_are_reused_while_annotations_are_unchanged() {
     assert!(!a.is_empty());
     assert_eq!(a, b, "the reused appearance is byte-identical");
 }
+
+/// The comment panel shows a comment's own opacity and line width: summaries read `/CA` and the
+/// border width, and default to fully opaque with no width when they are missing or malformed.
+#[test]
+fn summaries_report_opacity_and_line_width() {
+    let mut doc = fixture();
+    let mut ink = new(0, Shape::Ink { strokes: vec![vec![[10.0, 10.0], [20.0, 20.0]]] });
+    ink.style.opacity = 0.5;
+    ink.style.width = 4.0;
+    add_annotation(&mut doc, &ink, &meta("ink")).unwrap();
+    let doc = reopen(&doc);
+    let all = summaries(&doc);
+    let s = all.iter().find(|s| s.subtype == "Ink").expect("the ink comment is listed");
+    assert!((s.opacity - 0.5).abs() < 1e-6, "{}", s.opacity);
+    assert_eq!(s.width, Some(4.0));
+}

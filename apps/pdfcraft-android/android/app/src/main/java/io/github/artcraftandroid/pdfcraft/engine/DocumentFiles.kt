@@ -120,6 +120,17 @@ class DocumentFiles(private val context: Context) {
         return FileProvider.getUriForFile(context, "${context.packageName}.files", copy)
     }
 
+    /** Several files to hand to another app at once (pictures of pages), each under its own name. */
+    fun shareableAll(files: List<Pair<File, String>>): List<Uri> {
+        shareDir.listFiles()?.forEach { it.deleteRecursively() }
+        val dir = File(shareDir, System.nanoTime().toString()).apply { mkdirs() }
+        return files.map { (file, name) ->
+            val copy = File(dir, name.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").ifBlank { file.name })
+            file.copyTo(copy, overwrite = true)
+            FileProvider.getUriForFile(context, "${context.packageName}.files", copy)
+        }
+    }
+
     /** A new file in the app's own space for a document it makes, named [name] (made unique). */
     fun newCreated(name: String): File {
         val base = safeName(name).removeSuffix(".pdf")

@@ -18,6 +18,10 @@ data class RecentFile(
     val starred: Boolean = false,
     /** It was left in Reading Mode, to reopen that way (the reference remembers it for each file). */
     val reading: Boolean = false,
+    /** Where the screen's top-left was on [lastPage] (points) and the zoom, to reopen at the same spot; x < 0: unknown. */
+    val lastX: Float = -1f,
+    val lastY: Float = -1f,
+    val lastZoom: Float = 1f,
 )
 
 /**
@@ -31,7 +35,10 @@ class RecentFiles(private val file: File) {
 
     fun touch(entry: RecentFile) = synchronized(lock) {
         val old = read().firstOrNull { it.uri == entry.uri }
-        val merged = entry.copy(starred = old?.starred ?: entry.starred, reading = old?.reading ?: entry.reading)
+        val merged = entry.copy(
+            starred = old?.starred ?: entry.starred, reading = old?.reading ?: entry.reading,
+            lastX = old?.lastX ?: entry.lastX, lastY = old?.lastY ?: entry.lastY, lastZoom = old?.lastZoom ?: entry.lastZoom,
+        )
         write(listOf(merged) + read().filter { it.uri != entry.uri })
     }
 
@@ -58,6 +65,9 @@ class RecentFiles(private val file: File) {
                     lastPage = o.optInt("lastPage"),
                     starred = o.optBoolean("starred"),
                     reading = o.optBoolean("reading"),
+                    lastX = o.optDouble("lastX", -1.0).toFloat(),
+                    lastY = o.optDouble("lastY", -1.0).toFloat(),
+                    lastZoom = o.optDouble("lastZoom", 1.0).toFloat(),
                 )
             }
         }.getOrDefault(emptyList())
@@ -68,7 +78,8 @@ class RecentFiles(private val file: File) {
         for (r in list.take(MAX)) {
             a.put(
                 JSONObject().put("uri", r.uri).put("name", r.name).put("opened", r.opened).put("pages", r.pages)
-                    .put("size", r.size).put("lastPage", r.lastPage).put("starred", r.starred).put("reading", r.reading),
+                    .put("size", r.size).put("lastPage", r.lastPage).put("starred", r.starred).put("reading", r.reading)
+                    .put("lastX", r.lastX.toDouble()).put("lastY", r.lastY.toDouble()).put("lastZoom", r.lastZoom.toDouble()),
             )
         }
         val tmp = File(file.parentFile, file.name + ".tmp")

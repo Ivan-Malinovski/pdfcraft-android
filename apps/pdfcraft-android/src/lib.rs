@@ -243,6 +243,10 @@ pub struct CommentInfo {
     pub locked: bool,
     /// Placed with Fill & Sign rather than the comment tools.
     pub fill_sign: bool,
+    /// Its opacity, 0 to 1.
+    pub opacity: f32,
+    /// Its line width in points, when it draws a line (ink, shapes, lines).
+    pub width: Option<f32>,
 }
 
 /// A form field's widget on a page: what a tap there fills.
@@ -625,6 +629,8 @@ impl MobileSession {
                     state: a.state.clone(),
                     locked: a.locked,
                     fill_sign: a.fill_sign,
+                    opacity: a.opacity,
+                    width: a.width,
                 })
                 .collect()
         })

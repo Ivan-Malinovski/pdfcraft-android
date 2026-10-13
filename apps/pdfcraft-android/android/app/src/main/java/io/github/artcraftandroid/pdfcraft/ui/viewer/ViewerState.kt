@@ -156,6 +156,22 @@ class ViewerState(pages: List<PageSize>) {
         clamp()
     }
 
+    /** Show the spot [x], [y] (points) of page [index] at the screen's top-left, at [level] zoom (continuous pages). */
+    fun showSpot(index: Int, x: Float, y: Float, level: Float) {
+        val l = layout
+        if (mode != PageMode.Continuous || l.rects.isEmpty() || !x.isFinite() || !y.isFinite() || !level.isFinite()) {
+            goToPage(index)
+            return
+        }
+        val i = index.coerceIn(0, l.rects.lastIndex)
+        val r = l.rects[i]
+        val s = l.scaleOf(i)
+        zoom = level.coerceIn(minZoom, maxZoom)
+        scrollX = (r.left + x * s) * zoom
+        scrollY = (r.top + y * s) * zoom - padTop
+        clamp()
+    }
+
     /** Where single-page mode should rest after a swipe with velocity [vx] (pixels/s). */
     fun snapTarget(vx: Float): Float {
         val page = (scrollX / max(1f, viewW))

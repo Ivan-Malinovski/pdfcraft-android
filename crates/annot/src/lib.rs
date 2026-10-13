@@ -2026,6 +2026,10 @@ pub struct Summary {
     pub intent: Option<String>,
     /// A Fill & Sign mark ([`is_fill_sign`]).
     pub fill_sign: bool,
+    /// `/CA`, the opacity, 0 to 1 (1 when absent or not a number).
+    pub opacity: f32,
+    /// The line width in points: `/BS /W`, else the third number of `/Border`.
+    pub width: Option<f32>,
 }
 
 fn text_value(doc: &Document, d: &Dict, key: &[u8]) -> Option<String> {
@@ -2081,6 +2085,15 @@ pub fn summaries(doc: &Document) -> Vec<Summary> {
             }
             let quads = nums(b"QuadPoints").as_chunks::<8>().0.to_vec();
             let in_reply_to = d.get(b"IRT").map(|o| doc.resolve(o)).and_then(|o| o.as_dict().cloned()).and_then(|p| text_value(doc, &p, b"NM"));
+            // keep in step with `pdfcraft_render::inspect`
+            let opacity = d.get(b"CA").and_then(|o| doc.resolve(o).as_f64()).filter(|v| v.is_finite()).map_or(1.0, |v| v.clamp(0.0, 1.0) as f32);
+            let width = d
+                .get(b"BS")
+                .map(|o| doc.resolve(o))
+                .and_then(|o| o.as_dict().and_then(|bs| bs.get(b"W")).and_then(|w| doc.resolve(w).as_f64()))
+                .or_else(|| nums(b"Border").get(2).map(|w| f64::from(*w)))
+                .filter(|w| w.is_finite() && *w >= 0.0)
+                .map(|w| w as f32);
             out.push(Summary {
                 page,
                 index,
@@ -2099,6 +2112,8 @@ pub fn summaries(doc: &Document) -> Vec<Summary> {
                 locked: annotation_flags(doc, d) & FLAG_LOCKED != 0,
                 intent: d.get(b"IT").and_then(|o| doc.resolve(o).as_name().map(|n| String::from_utf8_lossy(n).into_owned())),
                 fill_sign: is_fill_sign(doc, d),
+                opacity,
+                width,
             });
         }
     }

@@ -118,6 +118,10 @@ class MainActivity : ComponentActivity() {
 
     private var lastTouch = System.currentTimeMillis()
 
+    // a keyboard (or desktop mode): keys the viewer takes when no text field has them
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean =
+        vm.viewerKey(keyCode, event.isCtrlPressed) || super.onKeyDown(keyCode, event)
+
     override fun onUserInteraction() {
         super.onUserInteraction()
         lastTouch = System.currentTimeMillis()

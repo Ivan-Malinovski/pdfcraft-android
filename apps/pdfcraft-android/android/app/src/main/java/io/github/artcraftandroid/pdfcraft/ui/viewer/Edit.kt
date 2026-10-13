@@ -37,6 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -103,7 +106,7 @@ private val EditColors = listOf(
 )
 
 /** Which formatting panel is open over the bar. */
-private enum class FormatPanel { None, Size, Font, Color, Align }
+private enum class FormatPanel { None, Size, Font, Color, Align, List }
 
 /**
  * Edit PDF's bottom bar. With nothing selected: Organize pages, then Add text and Add image. With a
@@ -132,7 +135,11 @@ private fun EditToolsBar(vm: AppViewModel, doc: OpenDocument) {
             vm.editMode = if (vm.editMode == EditMode.AddText) EditMode.Select else EditMode.AddText
             if (vm.editMode == EditMode.AddText) vm.tell("Tap the page where the text should go")
         }
-        EditBarItem(LucideIcons.ImagePlus, "Add image", false, 78.dp) { vm.pickEditImage(doc) }
+        // as Add text: a mode, then a tap places the picture there
+        EditBarItem(LucideIcons.ImagePlus, "Add image", vm.editMode == EditMode.AddImage, 78.dp) {
+            vm.editMode = if (vm.editMode == EditMode.AddImage) EditMode.Select else EditMode.AddImage
+            if (vm.editMode == EditMode.AddImage) vm.tell("Tap the page where the picture should go")
+        }
     }
 }
 
@@ -174,6 +181,7 @@ private fun EditFormatBar(vm: AppViewModel, doc: OpenDocument, para: Paragraph) 
                 vm.editAlign[para.page to para.number] = a
                 vm.styleParagraph(doc, para, mapOf("align" to a))
             }
+            FormatPanel.List -> ListPanel(ListStyle.of(vm.editDraft?.takeIf { vm.editing != null } ?: para.text)) { vm.listParagraph(doc, para, it) }
             FormatPanel.None -> Unit
         }
         Row(
@@ -204,6 +212,8 @@ private fun EditFormatBar(vm: AppViewModel, doc: OpenDocument, para: Paragraph) 
                 )
             }
             FormatButton(alignIcon(vm.editAlign[para.page to para.number] ?: "left"), "Align text", true, tintSelected = panel == FormatPanel.Align || true) { toggle(FormatPanel.Align) }
+            // bulleted and numbered lists, as the reference's phone toolbar offers
+            FormatButton(LucideIcons.List, "List", true, tintSelected = true) { toggle(FormatPanel.List) }
         }
     }
 }
@@ -244,14 +254,14 @@ private fun FormatButton(icon: ImageVector, description: String, selected: Boole
 @Composable
 private fun SizePanel(para: Paragraph, onSize: (Float) -> Unit) {
     val c = pdfColors
-    var size by remember(para.page, para.number, para.size) { mutableFloatStateOf(para.size.coerceIn(6f, 72f)) }
+    var size by remember(para.page, para.number, para.size) { mutableFloatStateOf(para.size.coerceIn(6f, 66f)) }
     Column(Modifier.fillMaxWidth().barTopLine().padding(top = 10.dp, bottom = 6.dp)) {
         Text("Text size: ${size.roundToInt()} pt", color = c.label, fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
             Text("A", color = c.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 10.dp))
             Slider(
-                value = size, onValueChange = { size = it.roundToInt().toFloat() }, onValueChangeFinished = { onSize(size) },
-                valueRange = 6f..72f, steps = 65,
+                value = size, onValueChange = { size = ((it / 2f).roundToInt() * 2f).coerceIn(6f, 66f) }, onValueChangeFinished = { onSize(size) },
+                valueRange = 6f..66f, steps = 29,
                 colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = c.textSecondary, inactiveTrackColor = c.textSecondary, activeTickColor = c.textSecondary, inactiveTickColor = c.textSecondary),
                 modifier = Modifier.weight(1f),
             )
@@ -295,6 +305,20 @@ private fun ColorPanel(current: String?, onColor: (String) -> Unit) {
             ) {
                 if (current.equals(hex, ignoreCase = true)) Icon(LucideIcons.Check, null, tint = if (hex == "#ffffff" || hex == "#ffff00" || hex == "#00ffff" || hex == "#00ff00") Color.Black else Color.White, modifier = Modifier.size(22.dp))
             }
+        }
+    }
+}
+
+/** None, the bullets and the numberings, the paragraph's own one marked. */
+@Composable
+private fun ListPanel(current: ListStyle, onPick: (ListStyle) -> Unit) {
+    val c = pdfColors
+    Row(Modifier.fillMaxWidth().barTopLine().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
+        for (style in ListStyle.entries) {
+            Box(
+                Modifier.height(40.dp).widthIn(min = 40.dp).clickable { onPick(style) }.padding(horizontal = 6.dp).semantics { contentDescription = "List ${style.name}" },
+                contentAlignment = Alignment.Center,
+            ) { Text(style.label, color = if (style == current) c.toolAccent else c.icon, fontSize = 17.sp, fontWeight = if (style == current) FontWeight.SemiBold else FontWeight.Normal) }
         }
     }
 }
@@ -471,7 +495,24 @@ private fun BoxScope.InlineEditor(vm: AppViewModel, doc: OpenDocument, para: Par
         mutableStateOf(TextFieldValue(para.text, if (vm.editSelectAll) TextRange(0, para.text.length) else TextRange(para.text.length)))
     }
     LaunchedEffect(para) { runCatching { focus.requestFocus() } }
+    val ime = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density)
+    LaunchedEffect(ime) {
+        if (ime <= 0) return@LaunchedEffect
+        val v = doc.viewer
+        // the formatting bar (and a panel) sit on the keyboard: keep the box's bottom clear of them
+        val clear = v.viewH - ime - with(density) { (BottomBarHeight + 64.dp).toPx() }
+        if (b.y > clear) v.setScroll(v.scrollX, v.scrollY + (b.y - clear))
+    }
     LaunchedEffect(value.text) { vm.editDraft = value.text }
+    // misspelled words, checked a moment after typing stops, underlined in red (as the reference does)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val speller = remember { SpellCheck(context) }
+    var typos by remember(para) { mutableStateOf<List<Typo>>(emptyList()) }
+    var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    LaunchedEffect(value.text) {
+        kotlinx.coroutines.delay(600)
+        typos = speller.check(value.text)
+    }
     var paper by remember(para) { mutableStateOf<Color?>(null) }
     LaunchedEffect(para) { paper = vm.paperColor(doc, para) }
     val fontPx = para.size * ppp
@@ -497,10 +538,60 @@ private fun BoxScope.InlineEditor(vm: AppViewModel, doc: OpenDocument, para: Par
                     textDecoration = if (vm.editUnderline[para.page to para.number] == true) TextDecoration.Underline else null,
                 ),
                 cursorBrush = SolidColor(SelectionBlue),
-                modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Paragraph text" },
+                onTextLayout = { layout = it },
+                modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Paragraph text" }
+                    .drawWithContent {
+                        drawContent()
+                        val l = layout ?: return@drawWithContent
+                        for (t in typos) {
+                            if (t.end > l.layoutInput.text.length) continue
+                            for (line in l.getLineForOffset(t.start)..l.getLineForOffset(t.end - 1)) {
+                                val x0 = if (line == l.getLineForOffset(t.start)) l.getHorizontalPosition(t.start, true) else l.getLineLeft(line)
+                                val x1 = if (line == l.getLineForOffset(t.end - 1)) l.getHorizontalPosition(t.end, true) else l.getLineRight(line)
+                                drawSquiggle(x0, x1, l.getLineBottom(line) - 1.dp.toPx())
+                            }
+                        }
+                    },
             )
         }
+        // the word at the cursor, if misspelled: its suggestions above the box, a tap puts one in
+        val at = value.selection.start
+        val typo = typos.firstOrNull { value.selection.collapsed && at in it.start..it.end && it.suggestions.isNotEmpty() }
+        if (typo != null) {
+            Row(
+                Modifier.offset { IntOffset(a.x.roundToInt(), (a.y - 48.dp.toPx()).roundToInt()) }
+                    .background(Color(0xFF2C2C2C), androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                for (word in typo.suggestions) {
+                    Text(
+                        word, color = Color.White, fontSize = 15.sp,
+                        modifier = Modifier.clickable {
+                            val t = value.text.replaceRange(typo.start, typo.end, word)
+                            value = TextFieldValue(t, TextRange(typo.start + word.length))
+                        }.padding(horizontal = 12.dp, vertical = 10.dp),
+                    )
+                }
+            }
+        }
     }
+}
+
+/** A red wavy line from [x0] to [x1] at [y], under a misspelled word. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSquiggle(x0: Float, x1: Float, y: Float) {
+    val step = 2.dp.toPx()
+    val path = androidx.compose.ui.graphics.Path().apply {
+        moveTo(x0, y)
+        var x = x0
+        var up = true
+        while (x < x1) {
+            val nx = minOf(x + step, x1)
+            lineTo(nx, if (up) y - step / 1.5f else y)
+            x = nx
+            up = !up
+        }
+    }
+    drawPath(path, Color(0xFFE34850), style = Stroke(1.dp.toPx()))
 }
 
 @Composable

@@ -85,14 +85,18 @@ fun PagesScreen(vm: AppViewModel, doc: OpenDocument, onClose: () -> Unit) {
     // dragging a page: its index and where it would drop
     var dragFrom by remember { mutableStateOf<Int?>(null) }
     var dragTo by remember { mutableStateOf<Int?>(null) }
+    val exporting = vm.imageExport
     fun close() {
         vm.organizing = false
+        vm.imageExport = null
         selected.clear()
         onClose()
     }
     // the tick leaves organizing for the grid of pages; back from the grid returns to the document
     fun back() {
-        if (organizing) {
+        if (exporting != null) {
+            close()
+        } else if (organizing) {
             vm.organizing = false
             selected.clear()
         } else {
@@ -128,8 +132,8 @@ fun PagesScreen(vm: AppViewModel, doc: OpenDocument, onClose: () -> Unit) {
                 if (organizing && picked.isNotEmpty()) "Selected ${picked.size}" else if (organizing) "Select pages" else "Pages",
                 color = c.label, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
             )
-            if (organizing) {
-                UndoMenuButton(doc.info.undo != null, doc.info.redo != null, { vm.undo(doc) }, { vm.redo(doc) })
+            if (organizing && exporting == null) {
+                UndoMenuButton(doc.info.undo != null, doc.info.redo != null, { vm.undo(doc) }, { vm.redo(doc) }, doc.info.undo, doc.info.redo)
                 Spacer(Modifier.width(6.dp))
             }
         }
@@ -247,7 +251,11 @@ fun PagesScreen(vm: AppViewModel, doc: OpenDocument, onClose: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(if (organizing) 0.dp else 20.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (organizing) {
+            if (exporting != null) {
+                // picking the pages to export: save them to the phone's pictures, or share them
+                OrganizeItem(LucideIcons.Save, "Save", enabled) { vm.writeImages(doc, exporting, picked, share = false) }
+                OrganizeItem(LucideIcons.Share2, "Share", enabled) { vm.writeImages(doc, exporting, picked, share = true) }
+            } else if (organizing) {
                 OrganizeItem(LucideIcons.FilePlus, "Insert Page", true) { insertMenu = true }
                 OrganizeItem(LucideIcons.FileOutput, "Extract", enabled) { vm.extractPages(doc, picked) }
                 OrganizeItem(LucideIcons.Trash2, "Delete", enabled && picked.size < doc.pageCount) {
@@ -269,9 +277,36 @@ fun PagesScreen(vm: AppViewModel, doc: OpenDocument, onClose: () -> Unit) {
         }
     }
     if (insertMenu) {
-        val at = (picked.lastOrNull() ?: (doc.pageCount - 1)) + 2
+        // where the new pages go, as the reference asks: around the selection, or at either end
+        var after by remember { mutableStateOf(true) }
+        val first = picked.firstOrNull()
+        val last = picked.lastOrNull()
+        val at = when {
+            first == null || last == null -> if (after) doc.pageCount + 1 else 1
+            after -> last + 2
+            else -> first + 1
+        }
         PdfSheet(onDismiss = { insertMenu = false }, dim = true) {
             SheetTitle("Insert")
+            val c = pdfColors
+            for (option in listOf(false, true)) {
+                val label = when {
+                    first == null || last == null -> if (option) "At the end" else "At the start"
+                    option -> "After page ${last + 1}"
+                    else -> "Before page ${first + 1}"
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable(role = Role.RadioButton) { after = option }.padding(horizontal = 12.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.RadioButton(
+                        selected = after == option, onClick = { after = option },
+                        colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = c.toolAccent, unselectedColor = c.icon),
+                    )
+                    Text(label, color = c.text, fontSize = 16.sp)
+                }
+            }
+            io.github.artcraftandroid.pdfcraft.ui.SheetDivider()
             SheetRow(LucideIcons.File, "Blank page", { insertMenu = false; vm.runTool(doc, "page_insert_blank", mapOf("at" to at)) })
             SheetRow(LucideIcons.FileStack, "From another file", { insertMenu = false; vm.pickInsertFile(doc, at) })
             SheetRow(LucideIcons.Camera, "From a scan", { insertMenu = false; vm.insertScanAt = doc to at; vm.startScan() })

@@ -281,6 +281,11 @@ pub struct Annotation {
     /// A Fill & Sign mark: typed text, a check, cross, dot or line, or a typed, drawn or picture
     /// signature or initials (the rules of `pdfcraft_annot::is_fill_sign`).
     pub fill_sign: bool,
+    /// `/CA`, the opacity, 0 to 1 (1 when absent or not a number).
+    pub opacity: f32,
+    /// The line width in points: `/BS /W`, else the third number of `/Border`; none when neither
+    /// is there.
+    pub width: Option<f32>,
 }
 
 impl Annotation {
@@ -954,6 +959,18 @@ impl<'a> Inspector<'a> {
                 };
                 let in_reply_to = d.get(b"IRT").ok().and_then(|o| self.dict(o)).and_then(|p| self.text(p, b"NM"));
                 let fill_sign = self.is_fill_sign(d, &subtype);
+                let opacity =
+                    d.get(b"CA").ok().and_then(|o| self.resolve(o).as_float().ok()).filter(|v| v.is_finite()).map_or(1.0, |v| v.clamp(0.0, 1.0));
+                let width = d
+                    .get(b"BS")
+                    .ok()
+                    .and_then(|o| self.dict(o))
+                    .and_then(|bs| bs.get(b"W").ok().and_then(|w| self.resolve(w).as_float().ok()))
+                    .or_else(|| match d.get(b"Border").map(|o| self.resolve(o)) {
+                        Ok(Object::Array(b)) => b.get(2).and_then(|w| w.as_float().ok()),
+                        _ => None,
+                    })
+                    .filter(|w| w.is_finite() && *w >= 0.0);
                 info.annotations.push(Annotation {
                     page,
                     subtype,
@@ -973,6 +990,8 @@ impl<'a> Inspector<'a> {
                     locked: d.get(b"F").ok().and_then(|f| self.resolve(f).as_i64().ok()).unwrap_or(0) & 128 != 0,
                     intent: self.name(d, b"IT"),
                     fill_sign,
+                    opacity,
+                    width,
                 });
             }
         }

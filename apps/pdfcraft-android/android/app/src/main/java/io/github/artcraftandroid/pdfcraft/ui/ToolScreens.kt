@@ -316,7 +316,8 @@ fun ProtectScreen(vm: AppViewModel, doc: OpenDocument) {
 fun ExportScreen(vm: AppViewModel, doc: OpenDocument) {
     val c = pdfColors
     var tab by remember { mutableStateOf(0) }
-    var format by remember(tab) { mutableStateOf(0) }
+    // the image format used last time comes first chosen
+    var format by remember(tab) { mutableStateOf(if (tab == 1 && vm.lastImageFormat == "png") 1 else 0) }
     val formats = if (tab == 0) {
         listOf("Word (docx)" to "docx", "Rich Text Format (rtf)" to "rtf", "Excel (xlsx)" to "xlsx", "PowerPoint (pptx)" to "pptx")
     } else {
@@ -405,6 +406,7 @@ fun ToolScreenHost(vm: AppViewModel, screen: ToolScreen) {
  */
 @Composable
 fun CombineScreen(vm: AppViewModel) {
+    var naming by remember { mutableStateOf(false) }
     val c = pdfColors
     val files = vm.combineFiles
     var dragIndex by remember { mutableStateOf<Int?>(null) }
@@ -472,9 +474,18 @@ fun CombineScreen(vm: AppViewModel) {
         }
         Box(
             Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp).height(42.dp).clip(RoundedCornerShape(21.dp))
-                .background(if (ok) c.button else c.pressed).clickable(enabled = ok) { vm.combine("Combine") },
+                .background(if (ok) c.button else c.pressed).clickable(enabled = ok) { naming = true },
             contentAlignment = Alignment.Center,
         ) { Text("Combine as PDF", color = if (ok) Color.White else c.textSecondary, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
+        if (naming) {
+            var name by remember { mutableStateOf("Combine " + java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(java.util.Date())) }
+            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+            PdfDialog(
+                onDismiss = { naming = false }, title = "Name the combined file", confirm = "Save",
+                onConfirm = { naming = false; vm.combine(name.trim().ifEmpty { "Combine" }) },
+                confirmEnabled = name.isNotBlank(),
+            ) { PdfField(name, { name = it }, "File name", focus = focus) }
+        }
     }
 }
 

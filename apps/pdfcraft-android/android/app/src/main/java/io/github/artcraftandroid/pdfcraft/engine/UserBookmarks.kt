@@ -61,6 +61,14 @@ class UserBookmarks(private val file: File) {
         save()
     }
 
+    /** The file was renamed: its bookmarks go with it (as the reference moves them). */
+    fun move(from: String, to: String) = synchronized(lock) {
+        if (from == to) return@synchronized
+        val list = byDoc.remove(from) ?: return@synchronized
+        byDoc[to] = list
+        save()
+    }
+
     fun clear(key: String) = synchronized(lock) {
         byDoc.remove(key)
         save()

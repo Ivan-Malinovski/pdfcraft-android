@@ -93,9 +93,18 @@ class ReadAloud(
     private val scope: CoroutineScope,
     startPage: Int,
     private val onEnd: () -> Unit,
+    /** Where this document's reading position is kept between sessions. */
+    private val key: String = "",
+    /** Start inside [startPage] at this glyph (the selection's first word), not its top. */
+    private val startGlyph: UInt? = null,
+    /** Pick up a stopped reading: paragraph and character within [startPage]. */
+    private val resumeAt: Pair<Int, Int>? = null,
 ) {
     var page by mutableIntStateOf(startPage)
         private set
+
+    /** The document's title, for the reading notification. */
+    val title: String get() = doc.title
     var playing by mutableStateOf(false)
         private set
     var finished by mutableStateOf(false)
@@ -104,6 +113,21 @@ class ReadAloud(
         private set
     var problem by mutableStateOf<String?>(null)
         private set
+
+    /** The language the voice reads in. */
+    var language by mutableStateOf<Locale>(Locale.getDefault())
+        private set
+
+    /** The languages the phone's voice can read, by name. */
+    fun languages(): List<Locale> = runCatching { tts.availableLanguages.orEmpty().sortedBy { it.getDisplayName(Locale.getDefault()) } }.getOrDefault(emptyList())
+
+    /** Read in [locale] from now on (remembered), going on from where the voice is. */
+    fun chooseLanguage(locale: Locale) {
+        language = locale
+        tts.language = locale
+        prefs(prefsCtx).edit().putString("lang", locale.toLanguageTag()).apply()
+        if (playing) speakCurrent()
+    }
 
     /** The lines of the paragraph being read and of its current word (points, flattened x0, y0, x1, y1). */
     var blockRects by mutableStateOf<List<Float>>(emptyList())
@@ -126,14 +150,26 @@ class ReadAloud(
                 return@launch
             }
             ready = true
-            tts.language = Locale.getDefault()
+            // the language chosen before (Voice), else the phone's
+            tts.language = prefs(prefsCtx).getString("lang", null)?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault()
+            language = tts.language ?: Locale.getDefault()
             tts.setSpeechRate(speed)
             loadPage(page)
+            placeStart()
             play()
         }
     }
 
+    /** The document's words (CJK characters count one each), once counted; 250 a page until then. */
+    private var totalWords by mutableIntStateOf(0)
+
     init {
+        // count the words of every page for the time estimate, as the reference does
+        scope.launch {
+            totalWords = withContext(Dispatchers.Default) {
+                (0 until doc.pageCount).sumOf { p -> countWords(runCatching { engine.session.pagePlainText(doc.id, p.toUInt()) }.getOrDefault("")) }
+            }
+        }
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
 
@@ -167,6 +203,25 @@ class ReadAloud(
         offset = 0
         blocks = withContext(Dispatchers.Default) { runCatching { engine.session.readingBlocks(doc.id, p.toUInt()) }.getOrDefault(emptyList()) }
         if (doc.viewer.currentPage != p) doc.viewer.goToPage(p)
+    }
+
+    /** Move to the selection's word, or to where a stopped reading was, within the loaded page. */
+    private fun placeStart() {
+        val g = startGlyph
+        if (g != null) {
+            val i = blocks.indexOfFirst { g >= it.range.start && g < it.range.end }
+            if (i >= 0) {
+                index = i
+                offset = blocks[i].glyphOfChar.indexOfFirst { it >= g }.coerceAtLeast(0)
+            }
+            return
+        }
+        resumeAt?.let { (i, o) ->
+            if (i in blocks.indices) {
+                index = i
+                offset = o.coerceIn(0, blocks[i].text.length)
+            }
+        }
     }
 
     private suspend fun nextPage() {
@@ -303,6 +358,12 @@ class ReadAloud(
 
     fun stop() {
         playing = false
+        // keep the place for next time (the reference offers to resume); a finished reading starts over
+        if (key.isNotEmpty()) {
+            val e = prefs(prefsCtx).edit()
+            if (finished) e.remove("pos:$key") else e.putString("pos:$key", "$page,$index,$offset")
+            e.apply()
+        }
         runCatching {
             tts.stop()
             tts.shutdown()
@@ -320,14 +381,40 @@ class ReadAloud(
             return ((page + within) / doc.pageCount).coerceIn(0f, 1f)
         }
 
-    /** Reading time left and gone, estimated from the pages (at about 250 words a page). */
-    val estimatedTotalMs: Long get() = (doc.pageCount * 250L * 60_000L / (WORDS_PER_MINUTE * speed)).toLong()
+    /** Reading time in all, estimated from the document's words (about 250 a page until they are counted). */
+    val estimatedTotalMs: Long get() {
+        val words = if (totalWords > 0) totalWords.toLong() else doc.pageCount * 250L
+        return (words * 60_000L / (WORDS_PER_MINUTE * speed)).toLong()
+    }
 
     companion object {
         val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
         /** A voice's pace at 1.0x, for turning 15 seconds into words. */
         private const val WORDS_PER_MINUTE = 128f
         private fun prefs(c: Context) = c.getSharedPreferences("readAloud", Context.MODE_PRIVATE)
+
+        /** Words in [text]: runs of letters or digits, with each CJK character a word of its own. */
+        fun countWords(text: String): Int {
+            var n = 0
+            var inWord = false
+            for (ch in text) {
+                val cjk = Character.UnicodeScript.of(ch.code) in setOf(Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA, Character.UnicodeScript.HANGUL)
+                when {
+                    cjk -> { n++; inWord = false }
+                    ch.isLetterOrDigit() -> { if (!inWord) n++; inWord = true }
+                    else -> inWord = false
+                }
+            }
+            return n
+        }
+
+        /** Where reading of a document stopped: page, paragraph and character, if it did. */
+        fun savedPosition(c: Context, key: String): Triple<Int, Int, Int>? {
+            val v = prefs(c).getString("pos:$key", null)?.split(',')?.mapNotNull { it.toIntOrNull() } ?: return null
+            return if (v.size == 3) Triple(v[0], v[1], v[2]) else null
+        }
+
+        fun forgetPosition(c: Context, key: String) = prefs(c).edit().remove("pos:$key").apply()
     }
 }
 
@@ -458,12 +545,15 @@ private fun ReadAloudFull(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
     val context = LocalContext.current
     var thumb by remember(r.page) { mutableStateOf<ImageBitmap?>(null) }
     var speeds by remember { mutableStateOf(false) }
+    var voices by remember { mutableStateOf(false) }
     LaunchedEffect(r.page) {
         val eng = vm.engine ?: return@LaunchedEffect
         val size = doc.info.pages.getOrNull(r.page) ?: return@LaunchedEffect
         val scale = 480f / maxOf(size.width, size.height).coerceAtLeast(1f)
         thumb = runCatching { withContext(eng.thumbnails) { eng.session.renderPage(doc.id, r.page.toUInt(), scale, null).toBitmap().asImageBitmap() } }.getOrNull()
     }
+    // the language sheet sits over the player, not in its column (which the player fills)
+    Box(Modifier.fillMaxSize()) {
     PdfSheet(onDismiss = onClose, maxHeightFraction = 1f, fill = true) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth()) {
@@ -499,9 +589,7 @@ private fun ReadAloudFull(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
             Spacer(Modifier.weight(1f))
             Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
                 Column(
-                    Modifier.clickable {
-                        runCatching { context.startActivity(Intent("com.android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                    }.padding(8.dp),
+                    Modifier.clickable { voices = true }.padding(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Icon(LucideIcons.AudioLines, null, tint = c.icon, modifier = Modifier.size(24.dp))
@@ -514,6 +602,44 @@ private fun ReadAloudFull(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
             }
         }
     }
+    if (voices) LanguageSheet(r, onVoiceSettings = {
+        voices = false
+        runCatching { context.startActivity(Intent("com.android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }) { voices = false }
+    }
+}
+
+/** Choose the language to read in: the ones the phone's voice has, then its voice settings. */
+@Composable
+private fun LanguageSheet(r: ReadAloud, onVoiceSettings: () -> Unit, onDismiss: () -> Unit) {
+    val c = pdfColors
+    val langs = remember { r.languages() }
+    // opened at the language in use (a couple of rows above it showing)
+    val current = remember(langs, r.language) { languageIndex(langs, r.language) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (current - 2).coerceAtLeast(0))
+    io.github.artcraftandroid.pdfcraft.ui.PdfSheet(onDismiss = onDismiss, dim = true) {
+        io.github.artcraftandroid.pdfcraft.ui.SheetTitle("Choose language")
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 420.dp), state = list) {
+            items(langs.size) { i ->
+                val l = langs[i]
+                io.github.artcraftandroid.pdfcraft.ui.SheetRow(null, l.getDisplayName(Locale.getDefault()), { r.chooseLanguage(l); onDismiss() }, checked = i == current)
+            }
+        }
+        io.github.artcraftandroid.pdfcraft.ui.SheetRow(LucideIcons.Settings, "Voice settings", onVoiceSettings)
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/**
+ * Where [current] is in [langs]: the same language and country, else the same language. Voices
+ * often list their languages by three-letter codes ("eng", "USA"), so both are compared that way.
+ * -1 when it isn't there.
+ */
+internal fun languageIndex(langs: List<Locale>, current: Locale): Int {
+    fun Locale.lang() = runCatching { isO3Language }.getOrDefault(language).lowercase(Locale.ROOT)
+    fun Locale.place() = runCatching { isO3Country }.getOrDefault(country).uppercase(Locale.ROOT)
+    val exact = langs.indexOfFirst { it.lang() == current.lang() && it.place() == current.place() }
+    return if (exact >= 0) exact else langs.indexOfFirst { it.lang() == current.lang() }
 }
 
 private fun readClock(ms: Long): String {

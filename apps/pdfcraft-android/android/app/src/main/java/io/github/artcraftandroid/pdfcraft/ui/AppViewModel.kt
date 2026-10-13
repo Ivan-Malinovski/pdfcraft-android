@@ -165,6 +165,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             document = doc
             startPendingTool(doc)
             pendingPage = recent?.lastPage?.takeIf { it in 0 until info.pages.size }
+            pendingSpot = recent?.takeIf { pendingPage != null && it.lastX >= 0f && it.lastY >= 0f }?.let { Triple(it.lastX, it.lastY, it.lastZoom) }
             withContext(Dispatchers.IO) {
                 recents.touch(RecentFile(uri.toString(), info.name, System.currentTimeMillis(), info.pages.size, file.length(), recent?.lastPage ?: 0))
             }
@@ -180,6 +181,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The page to show once the viewer has laid the document out (reopening where the reader left off). */
     var pendingPage: Int? = null
+
+    /** With [pendingPage]: the spot (points) at the screen's top-left and the zoom it was left at. */
+    var pendingSpot: Triple<Float, Float, Float>? = null
 
     /** Intents for the activity to start (share, open a link): the view model has no activity. */
     val intents = Channel<Intent>(Channel.BUFFERED)
@@ -235,10 +239,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun saveAndClose(eng: Engine, doc: OpenDocument) {
         val reading = readingMode
         val pending = pendingPage
+        // the spot at the screen's top-left and the zoom, to reopen there (as the reference does)
+        val v = doc.viewer
+        val spot = if (pending == null && v.mode == io.github.artcraftandroid.pdfcraft.ui.viewer.PageMode.Continuous) v.screenToPage(androidx.compose.ui.geometry.Offset(0f, v.padTop), nearest = true) else null
+        val zoom = v.zoom
         withContext(Dispatchers.IO) {
             // in Reading Mode the page canvas has no layout: the page read is the pending one
-            val page = pending ?: doc.viewer.currentPage
-            doc.source?.let { src -> recents.update(src.toString()) { it.copy(lastPage = page, reading = reading) } }
+            val page = pending ?: spot?.page ?: v.currentPage
+            doc.source?.let { src ->
+                recents.update(src.toString()) {
+                    it.copy(lastPage = page, reading = reading, lastX = spot?.x ?: -1f, lastY = spot?.y ?: -1f, lastZoom = if (spot != null) zoom else 1f)
+                }
+            }
         }
         save(doc)
         closeQuietly(eng, doc)
@@ -318,12 +330,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Undo: inside a tool that keeps its own history (Draw) only that; else the document's last edit, named in a message. */
     fun undo(doc: OpenDocument) {
-        if (doc.undoTool?.invoke() == true) return
-        runTool(doc, "edit_undo")
+        doc.localUndo?.let { it.undo(); return }
+        val label = doc.info.undo ?: return
+        runTool(doc, "edit_undo") { tell("$label undone") }
     }
 
-    fun redo(doc: OpenDocument) = runTool(doc, "edit_redo")
+    fun redo(doc: OpenDocument) {
+        doc.localUndo?.let { it.redo(); return }
+        val label = doc.info.redo ?: return
+        runTool(doc, "edit_redo") { tell("$label redone") }
+    }
 
     /** Switch the viewer to [tool], unless the document forbids what it does. */
     fun enterTool(doc: OpenDocument, tool: ViewerTool) {
@@ -421,7 +439,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun whenSearchDone(doc: OpenDocument) {
         viewModelScope.launch {
             snapshotFlow { doc.search.running }.first { !it }
-            if (doc.search.hits.isEmpty() && doc.search.query.isNotEmpty()) tell("No matches for “${doc.search.query}”")
+            if (doc.search.hits.isEmpty() && doc.search.query.isNotEmpty()) {
+                val eng = engine
+                val textless = eng != null && (0 until minOf(doc.pageCount, 5)).all { p ->
+                    runCatching { withContext(eng.commands) { eng.session.glyphCount(doc.id, p.toUInt()) } }.getOrDefault(1u) == 0u
+                }
+                if (textless) {
+                    tell("This file's words are pictures, so they can't be searched yet.", "Recognize text") { recognizeText(doc) }
+                } else {
+                    tell("No matches for “${doc.search.query}”")
+                }
+            }
         }
     }
 
@@ -439,6 +467,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Keys in the viewer, as the reference takes them: N or Page Down for the next page, P or Page
+     * Up for the previous one, the arrows to scroll, Ctrl+P to print, Ctrl and + or − to zoom.
+     */
+    fun viewerKey(keyCode: Int, ctrl: Boolean): Boolean {
+        val doc = document ?: return false
+        if (toolScreen != null || readingMode) return false
+        val v = doc.viewer
+        val center = androidx.compose.ui.geometry.Offset(v.viewW / 2f, v.viewH / 2f)
+        when {
+            ctrl && keyCode == android.view.KeyEvent.KEYCODE_P -> print(doc)
+            ctrl && (keyCode == android.view.KeyEvent.KEYCODE_EQUALS || keyCode == android.view.KeyEvent.KEYCODE_PLUS || keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ADD) -> v.zoomTo(v.zoom + 0.25f, center)
+            ctrl && (keyCode == android.view.KeyEvent.KEYCODE_MINUS || keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_SUBTRACT) -> v.zoomTo(v.zoom - 0.25f, center)
+            ctrl -> return false
+            keyCode == android.view.KeyEvent.KEYCODE_N || keyCode == android.view.KeyEvent.KEYCODE_PAGE_DOWN -> v.goToPage(v.currentPage + 1)
+            keyCode == android.view.KeyEvent.KEYCODE_P || keyCode == android.view.KeyEvent.KEYCODE_PAGE_UP -> v.goToPage(v.currentPage - 1)
+            keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> v.setScroll(v.scrollX, v.scrollY + v.viewH * 0.1f)
+            keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> v.setScroll(v.scrollX, v.scrollY - v.viewH * 0.1f)
+            keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> v.setScroll(v.scrollX + v.viewW * 0.1f, v.scrollY)
+            keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT -> v.setScroll(v.scrollX - v.viewW * 0.1f, v.scrollY)
+            else -> return false
+        }
+        return true
+    }
+
     /** Print [doc] through Android's print framework. */
     fun print(doc: OpenDocument) {
         if (!doc.info.allowsPrinting) {
@@ -447,8 +500,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             save(doc)
-            prints.trySend(doc.file to doc.name)
+            // the system's printing can't open a password-protected file: print an unlocked copy
+            val file = if (doc.info.encrypted) unlockedCopy(doc) ?: doc.file else doc.file
+            prints.trySend(file to doc.name)
         }
+    }
+
+    /** A temporary copy of [doc] without its password, for printing; null if the security can't be removed. */
+    private suspend fun unlockedCopy(doc: OpenDocument): File? {
+        val eng = engine ?: return null
+        return runCatching {
+            val out = tempFile("pdf")
+            val copy = eng.tool("doc_open", mapOf("path" to doc.file.absolutePath, "password" to doc.password)).optLong("doc")
+            try {
+                eng.tool("doc_unprotect", mapOf("doc" to copy))
+                eng.tool("doc_save", mapOf("doc" to copy, "path" to out.absolutePath, "full" to true))
+            } finally {
+                runCatching { eng.tool("doc_close", mapOf("doc" to copy, "discard_changes" to true)) }
+            }
+            out
+        }.getOrNull()
     }
 
     /** Where Save a copy is asked to write (the activity opens the system's file creator with this name). */
@@ -494,6 +565,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var readAloud by mutableStateOf<ReadAloud?>(null)
         private set
 
+    /** The reading notification follows Read aloud: shown while it reads or is paused, gone when it stops. */
+    private val readAloudNotice = viewModelScope.launch {
+        snapshotFlow { readAloud to (readAloud?.playing == true) }.collect { (ra, playing) ->
+            val ctx = getApplication<Application>()
+            if (ra == null) {
+                io.github.artcraftandroid.pdfcraft.ReadAloudService.controls = null
+                io.github.artcraftandroid.pdfcraft.ReadAloudService.hide(ctx)
+            } else {
+                io.github.artcraftandroid.pdfcraft.ReadAloudService.controls = object : io.github.artcraftandroid.pdfcraft.ReadAloudService.Controls {
+                    override fun play() { readAloud?.play() }
+                    override fun pause() { readAloud?.pause() }
+                    override fun skip(forward: Boolean) { readAloud?.skip(forward) }
+                    override fun stop() { readAloud?.stop() }
+                }
+                io.github.artcraftandroid.pdfcraft.ReadAloudService.show(ctx, ra.title, playing)
+            }
+        }
+    }
+
     fun startReadAloud(doc: OpenDocument, fromSelection: Boolean = false) {
         if (doc.info.encrypted) {
             tell("Read aloud isn't available for password-protected documents.")
@@ -501,8 +591,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         readAloud?.stop()
         val eng = engine ?: return
-        val start = if (fromSelection) doc.selection.selection?.range?.page?.toInt() else null
-        readAloud = ReadAloud(getApplication(), eng, doc, viewModelScope, start ?: doc.viewer.currentPage) { readAloud = null }
+        val key = docKey(doc)
+        val sel = if (fromSelection) doc.selection.selection?.range else null
+        if (sel != null) {
+            // from the selection's first word
+            readAloud = ReadAloud(getApplication(), eng, doc, viewModelScope, sel.page.toInt(), { readAloud = null }, key, startGlyph = sel.start)
+            return
+        }
+        val saved = ReadAloud.savedPosition(getApplication(), key)?.takeIf { it.first in 0 until doc.pageCount }
+        if (saved != null) {
+            readAloud = ReadAloud(getApplication(), eng, doc, viewModelScope, saved.first, { readAloud = null }, key, resumeAt = saved.second to saved.third)
+            tell("Reading on from where you stopped", "Start over") {
+                ReadAloud.forgetPosition(getApplication(), key)
+                readAloud?.stop()
+                ReadAloud.forgetPosition(getApplication(), key)
+                readAloud = ReadAloud(getApplication(), eng, doc, viewModelScope, 0, { readAloud = null }, key)
+            }
+            return
+        }
+        readAloud = ReadAloud(getApplication(), eng, doc, viewModelScope, doc.viewer.currentPage, { readAloud = null }, key)
     }
 
     // ---- Tools' remembered settings, bookmarks, stars --------------------------------------
@@ -513,6 +620,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val quickToolbar = io.github.artcraftandroid.pdfcraft.ui.viewer.QuickToolbarPrefs(app)
     private val appPrefs = app.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
     private val bookmarkStore = UserBookmarks(File(app.filesDir, "bookmarks.json"))
+
+    /** The Search tab's last searches, newest first (kept on the phone, as the reference keeps them). */
+    var recentSearches by mutableStateOf(appPrefs.getString("recentSearches", null)?.split('\n')?.filter { it.isNotBlank() } ?: emptyList())
+        private set
+
+    fun addRecentSearch(q: String) {
+        val t = q.trim()
+        if (t.isEmpty()) return
+        recentSearches = (listOf(t) + recentSearches.filterNot { it.equals(t, ignoreCase = true) }).take(10)
+        appPrefs.edit().putString("recentSearches", recentSearches.joinToString("\n")).apply()
+    }
+
+    fun removeRecentSearch(q: String) {
+        recentSearches = recentSearches - q
+        appPrefs.edit().putString("recentSearches", recentSearches.joinToString("\n")).apply()
+    }
+
+    fun clearRecentSearches() {
+        recentSearches = emptyList()
+        appPrefs.edit().remove("recentSearches").apply()
+    }
 
     /** The key a document's own data (bookmarks, stars, last page) is kept under: where it came from. */
     fun docKey(doc: OpenDocument): String = doc.source?.toString() ?: doc.file.absolutePath
@@ -693,17 +821,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isBlank()) return
         val at = prompt.at
         val size = toolPrefs.textSize
-        val lines = text.lines()
-        val width = (lines.maxOf { it.length } * size * 0.55f + size).coerceAtLeast(size * 2)
-        val height = lines.size * size * 1.25f + size * 0.5f
         val page = prompt.doc.info.pages.getOrNull(at.page) ?: return
+        // as the reference: lines that wrap where the page ends become real line breaks, and the box
+        // is as wide as its longest line (measured as the engine draws it, so it doesn't wrap again)
+        val (lines, width, height) = FreeTextLayout.layout(text, size, (page.width - at.x - 6f).coerceAtLeast(size * 4))
+        val wrapped = lines.joinToString("\n")
         val x1 = (at.x + width).coerceAtMost(page.width)
         val y1 = (at.y + height).coerceAtMost(page.height)
         runTool(
             prompt.doc, "comment_add",
             mapOf(
                 "page" to at.page + 1, "type" to "textbox", "rect" to listOf(at.x, at.y, x1, y1).map { it.toDouble() },
-                "contents" to text, "color" to toolPrefs.color(StyledTool.FreeText).hex(), "font_size" to size.toDouble(), "author" to author,
+                "contents" to wrapped, "color" to toolPrefs.color(StyledTool.FreeText).hex(), "font_size" to size.toDouble(), "author" to author,
             ),
         )
     }
@@ -1029,6 +1158,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             addTextPrompt = TextPrompt(doc, at)
             return
         }
+        if (editMode == io.github.artcraftandroid.pdfcraft.ui.viewer.EditMode.AddImage) {
+            editMode = io.github.artcraftandroid.pdfcraft.ui.viewer.EditMode.Select
+            editSelection = null
+            addImageAt(doc, at)
+            return
+        }
         val hit = paragraphs[at.page].orEmpty().firstOrNull { p -> at.x in (p.box[0] - 4)..(p.box[2] + 4) && at.y in (p.box[1] - 4)..(p.box[3] + 4) }
         editSelection = hit
         if (hit == null) selectImageAt(doc, at)
@@ -1063,6 +1198,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun paraArgs(para: io.github.artcraftandroid.pdfcraft.ui.viewer.Paragraph) = mapOf<String, Any?>("page" to para.page + 1, "paragraph" to para.number)
+
+    /** Make [para] a list of [style] (or plain again), with any typing so far. */
+    fun listParagraph(doc: OpenDocument, para: io.github.artcraftandroid.pdfcraft.ui.viewer.Paragraph, style: io.github.artcraftandroid.pdfcraft.ui.viewer.ListStyle) {
+        val typing = editing != null && editing?.number == para.number && editing?.page == para.page
+        val base = if (typing) editDraft ?: para.text else para.text
+        val text = io.github.artcraftandroid.pdfcraft.ui.viewer.ListStyle.apply(base, style)
+        if (text == base) return
+        if (typing) editDraft = text
+        runTool(doc, "text_edit", paraArgs(para) + ("text" to text))
+    }
 
     /** A formatting change to [para], applied to the page at once (with any typing so far). */
     fun styleParagraph(doc: OpenDocument, para: io.github.artcraftandroid.pdfcraft.ui.viewer.Paragraph, style: Map<String, Any?>) {
@@ -1101,20 +1246,44 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun selectImageAt(doc: OpenDocument, at: PagePoint) {
+        viewModelScope.launch { imageUnder(doc, at)?.let { editImage = it } }
+    }
+
+    /** The picture drawn under [at], topmost first, if any. */
+    private suspend fun imageUnder(doc: OpenDocument, at: PagePoint): io.github.artcraftandroid.pdfcraft.ui.viewer.EditImage? {
+        val eng = engine ?: return null
+        val r = runCatching { eng.tool("page_images", mapOf("doc" to doc.id, "page" to at.page + 1)) }.getOrNull() ?: return null
+        val arr = r.optJSONArray("images") ?: return null
+        for (i in arr.length() - 1 downTo 0) {
+            val o = arr.optJSONObject(i) ?: continue
+            val rect = (o.optJSONArray("visible_rect") ?: o.optJSONArray("rect")) ?: continue
+            val box = FloatArray(4) { k -> rect.optDouble(k).toFloat() }
+            if (at.x in box[0]..box[2] && at.y in box[1]..box[3]) {
+                val full = o.optJSONArray("rect") ?: rect
+                return io.github.artcraftandroid.pdfcraft.ui.viewer.EditImage(at.page, o.optInt("image"), FloatArray(4) { k -> full.optDouble(k).toFloat() })
+            }
+        }
+        return null
+    }
+
+    /** The menu a long press on an empty part of a page opens. */
+    var pageMenu by mutableStateOf<io.github.artcraftandroid.pdfcraft.ui.viewer.PageMenu?>(null)
+
+    /**
+     * A long press where no word is: on a picture, Edit PDF with the picture selected (the
+     * reference's picture menu leads to editing it); elsewhere, the page menu at that point.
+     */
+    fun longPressPage(doc: OpenDocument, at: PagePoint, screen: androidx.compose.ui.geometry.Offset) {
         val eng = engine ?: return
         viewModelScope.launch {
-            val r = runCatching { eng.tool("page_images", mapOf("doc" to doc.id, "page" to at.page + 1)) }.getOrNull() ?: return@launch
-            val arr = r.optJSONArray("images") ?: return@launch
-            for (i in arr.length() - 1 downTo 0) {
-                val o = arr.optJSONObject(i) ?: continue
-                val rect = (o.optJSONArray("visible_rect") ?: o.optJSONArray("rect")) ?: continue
-                val box = FloatArray(4) { k -> rect.optDouble(k).toFloat() }
-                if (at.x in box[0]..box[2] && at.y in box[1]..box[3]) {
-                    val full = o.optJSONArray("rect") ?: rect
-                    editImage = io.github.artcraftandroid.pdfcraft.ui.viewer.EditImage(at.page, o.optInt("image"), FloatArray(4) { k -> full.optDouble(k).toFloat() })
-                    return@launch
-                }
+            val img = imageUnder(doc, at)
+            if (img != null) {
+                enterTool(doc, io.github.artcraftandroid.pdfcraft.ui.viewer.ViewerTool.Edit)
+                if (doc.controller.tool == io.github.artcraftandroid.pdfcraft.ui.viewer.ViewerTool.Edit) editImage = img
+                return@launch
             }
+            val glyphs = runCatching { withContext(eng.commands) { eng.session.glyphCount(doc.id, at.page.toUInt()) } }.getOrDefault(1u)
+            pageMenu = io.github.artcraftandroid.pdfcraft.ui.viewer.PageMenu(doc, at, screen, pageHasText = glyphs > 0u)
         }
     }
 
@@ -1152,10 +1321,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val imagePicks = Channel<OpenDocument>(Channel.BUFFERED)
     private var imageFor: OpenDocument? = null
 
+    /** Where the picture being picked goes (centred there); null: the current page as before. */
+    private var imageAt: PagePoint? = null
+
     fun pickEditImage(doc: OpenDocument) {
         imageFor = doc
         imagePicks.trySend(doc)
     }
+
+    /** Add image at a tapped point (Edit PDF's Add image mode, or the page menu): first, from where. */
+    fun addImageAt(doc: OpenDocument, at: PagePoint) {
+        imageSource = doc to at
+    }
+
+    /** Asking where the picture comes from (photos or the camera), as the reference's menu does. */
+    var imageSource by mutableStateOf<Pair<OpenDocument, PagePoint>?>(null)
+
+    fun addImageFrom(camera: Boolean) {
+        val (doc, at) = imageSource ?: return
+        imageSource = null
+        imageAt = at
+        if (!camera) {
+            pickEditImage(doc)
+            return
+        }
+        imageFor = doc
+        val dir = File(getApplication<Application>().cacheDir, "camera").apply { mkdirs() }
+        val f = File(dir, "image-${System.nanoTime()}.jpg")
+        shotFile = f
+        imageShot = true
+        cameraShots.trySend(f)
+    }
+
+    /** The camera's photo is for Add image, not a scan. */
+    private var imageShot = false
 
     fun addImage(uri: Uri?) {
         val doc = imageFor ?: return
@@ -1176,7 +1375,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
                 val eng = engine ?: return@launch
-                eng.tool("page_add_image", mapOf("doc" to doc.id, "page" to doc.viewer.currentPage + 1, "path" to f.absolutePath))
+                val at = imageAt
+                imageAt = null
+                val args = mutableMapOf<String, Any?>("doc" to doc.id, "page" to (at?.page ?: doc.viewer.currentPage) + 1, "path" to f.absolutePath)
+                // centred on the tapped point, a third of the page wide, kept on the page
+                val page = at?.let { doc.info.pages.getOrNull(it.page) }
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(f.absolutePath, bounds)
+                if (at != null && page != null && bounds.outWidth > 0 && bounds.outHeight > 0) {
+                    var w = page.width / 3f
+                    var h = w * bounds.outHeight / bounds.outWidth
+                    if (h > page.height / 2f) {
+                        h = page.height / 2f
+                        w = h * bounds.outWidth / bounds.outHeight
+                    }
+                    val x0 = (at.x - w / 2f).coerceIn(0f, (page.width - w).coerceAtLeast(0f))
+                    val y0 = (at.y - h / 2f).coerceIn(0f, (page.height - h).coerceAtLeast(0f))
+                    args["rect"] = listOf(x0, y0, x0 + w, y0 + h).map { it.toDouble() }
+                }
+                eng.tool("page_add_image", args)
                 refresh(doc)
             } catch (e: Exception) {
                 tell(e.userMessage)
@@ -1211,9 +1428,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "radio" -> w.export?.let { fillField(doc, w.field, it) }
             "text", "combo", "list" -> fieldEdit = io.github.artcraftandroid.pdfcraft.ui.viewer.FieldEdit(doc, w)
             "signature" -> signaturePad = io.github.artcraftandroid.pdfcraft.ui.viewer.SignaturePad(false, doc, PagePoint(at.page, (w.rect[0] + w.rect[2]) / 2f - 40f, (w.rect[1] + w.rect[3]) / 2f - 10f))
+            "button" -> pressButton(doc, w)
             else -> return false
         }
         return true
+    }
+
+    /**
+     * A form button: does what its release action says, as far as a reader does on a phone:
+     * clear the form (or the fields it names), open a web address after asking, or go to a page.
+     * Scripts and sending the form online aren't run.
+     */
+    private fun pressButton(doc: OpenDocument, w: io.github.artcraftandroid.pdfcraft.core.WidgetInfo) {
+        val eng = engine ?: return
+        viewModelScope.launch {
+            val r = runCatching { eng.tool("form_actions", mapOf("doc" to doc.id, "field" to w.field)) }.getOrNull() ?: return@launch
+            val acts = r.optJSONArray("actions") ?: return@launch
+            val all = (0 until acts.length()).mapNotNull { acts.optJSONObject(it) }
+            val act = all.firstOrNull { it.optString("trigger") == "mouse_up" } ?: all.firstOrNull() ?: return@launch
+            when {
+                act.has("reset") -> {
+                    val names = act.optJSONArray("reset")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+                    runTool(doc, "form_reset", if (names.isEmpty()) emptyMap() else mapOf("fields" to names)) { tell("Form cleared") }
+                }
+                act.has("url") -> linkPrompt = act.optString("url")
+                act.has("page") -> doc.viewer.goToPage((act.optInt("page") - 1).coerceIn(0, doc.pageCount - 1))
+                act.has("submit") -> tell("This button sends the form online, which PdfCraft doesn't do.")
+                act.has("javascript") -> tell("This button runs a script, which PdfCraft doesn't run.")
+            }
+        }
     }
 
     fun fillField(doc: OpenDocument, field: String, value: Any) {
@@ -1335,7 +1578,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "discard_thumbnails" to true, "remove_unreferenced_dests" to true,
         ))
         toolScreen = null
-        if (out.length() >= doc.info.fileSize.toLong()) tell("This file is already compressed.")
+        if (out.length() >= doc.info.fileSize.toLong()) {
+            // as the reference: nothing is saved when the file can't get any smaller
+            out.delete()
+            tell("This file is already as small as it can be.")
+            return@job
+        }
         deliver(out, "${doc.title}_compressed.pdf")
     }
 
@@ -1393,11 +1641,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Every page of [doc] as an image (200 dpi) in Pictures/PdfCraft. */
-    fun exportImages(doc: OpenDocument, ext: String) = job("Exporting images…") { eng ->
+    /** Export to images: the format chosen, while its pages are being picked in the page grid. */
+    var imageExport by mutableStateOf<String?>(null)
+
+    /** The image format last exported to, offered first next time (as the reference remembers it). */
+    val lastImageFormat: String get() = appPrefs.getString("imageFormat", "jpg") ?: "jpg"
+
+    /** Export to images: remember the format, then pick the pages in the page grid (Save or Share there). */
+    fun exportImages(doc: OpenDocument, ext: String) {
+        appPrefs.edit().putString("imageFormat", ext).apply()
+        toolScreen = null
+        imageExport = ext
+        organizing = true
+        doc.controller.pagesOpen = true
+    }
+
+    /** Pictures of [pages] (0-based) at 200 dpi, saved to Pictures/PdfCraft or handed to the share sheet. */
+    fun writeImages(doc: OpenDocument, ext: String, pages: List<Int>, share: Boolean) = job("Exporting images…") { eng ->
         val mime = if (ext == "png") "image/png" else "image/jpeg"
-        var saved = 0
-        for (i in 0 until doc.pageCount) {
-            busy = "Exporting page ${i + 1} of ${doc.pageCount}…"
+        val made = mutableListOf<Pair<File, String>>()
+        for ((n, i) in pages.withIndex()) {
+            busy = "Exporting page ${n + 1} of ${pages.size}…"
             val img = withContext(eng.renders) { eng.session.renderPage(doc.id, i.toUInt(), 200f / 72f, null) }
             val out = tempFile(ext)
             withContext(Dispatchers.IO) {
@@ -1409,13 +1673,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     c.drawBitmap(bmp, 0f, 0f, null)
                 }
                 out.outputStream().use { flat.compress(if (ext == "png") android.graphics.Bitmap.CompressFormat.PNG else android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
-                files.saveToPictures(out, "${doc.title}_${i + 1}.$ext", mime)
-                out.delete()
             }
-            saved++
+            made += out to "${doc.title}_${i + 1}.$ext"
         }
-        toolScreen = null
-        tell(if (saved == 1) "1 image saved to Pictures/PdfCraft" else "$saved images saved to Pictures/PdfCraft")
+        imageExport = null
+        organizing = false
+        doc.controller.pagesOpen = false
+        if (share) {
+            val uris = withContext(Dispatchers.IO) { files.shareableAll(made) }
+            made.forEach { it.first.delete() }
+            val send = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uris.first())
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).setType(mime).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            }
+            intents.trySend(Intent.createChooser(send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null))
+        } else {
+            withContext(Dispatchers.IO) {
+                for ((f, name) in made) {
+                    files.saveToPictures(f, name, mime)
+                    f.delete()
+                }
+            }
+            tell(if (made.size == 1) "1 image saved to Pictures/PdfCraft" else "${made.size} images saved to Pictures/PdfCraft")
+        }
     }
 
     /** Create PDF from picked files (images, text, Office documents, PDFs), combined in order, then open it. */
@@ -1455,6 +1736,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun onScanPhoto(ok: Boolean) {
         val f = shotFile ?: return
         shotFile = null
+        if (imageShot) {
+            imageShot = false
+            if (!ok || !f.isFile || f.length() == 0L) {
+                imageFor = null
+                imageAt = null
+                return
+            }
+            // turned upright as the camera meant it (the page keeps no orientation tag), then placed
+            viewModelScope.launch {
+                val upright = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath)?.let { rotateForExif(f, it) } ?: return@runCatching f
+                        val out = File(f.parentFile, "upright-${f.name}")
+                        out.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+                        out
+                    }.getOrDefault(f)
+                }
+                addImage(Uri.fromFile(upright))
+            }
+            return
+        }
         if (!ok || !f.isFile || f.length() == 0L) {
             if (scanPages.isEmpty()) toolScreen = null
             return
@@ -1503,6 +1805,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             for (p in 1..paths.size) {
                 busy = "Cleaning up page $p of ${paths.size}…"
                 runCatching { eng.tool("page_enhance_camera", mapOf("doc" to id, "page" to p, "mode" to filter.mode, "level" to filter.level)) }
+            }
+            // the scan's words become text, searchable and selectable, when text recognition is installed
+            withContext(Dispatchers.IO) { runCatching { eng.prepareOcrModels(getApplication()) } }
+            if (runCatching { eng.tool("ocr_status") }.getOrNull()?.optBoolean("available", false) == true) {
+                busy = "Recognizing text…"
+                runCatching { eng.tool("ocr_recognize", mapOf("doc" to id)) }
             }
             val out = tempFile("pdf")
             eng.tool("doc_save", mapOf("doc" to id, "path" to out.absolutePath, "full" to true))
@@ -1693,6 +2001,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { if (u.scheme == "file") File(requireNotNull(u.path)) else files.workingCopy(u) }.getOrNull()
     }
 
+    /** Files ticked in Home's lists (a long press starts it), keyed by where they are. */
+    val selectedFiles = androidx.compose.runtime.mutableStateMapOf<String, io.github.artcraftandroid.pdfcraft.ui.home.FileRow>()
+
+    fun toggleSelected(row: io.github.artcraftandroid.pdfcraft.ui.home.FileRow) {
+        if (selectedFiles.remove(row.key) == null) selectedFiles[row.key] = row
+    }
+
+    /** Several PDFs to the share sheet at once. */
+    fun shareFiles(rows: List<io.github.artcraftandroid.pdfcraft.ui.home.FileRow>) {
+        viewModelScope.launch {
+            val local = rows.mapNotNull { r -> localFileOf(r)?.let { it to r.name } }
+            if (local.isEmpty()) return@launch tell("The files couldn't be read.")
+            val uris = withContext(Dispatchers.IO) { files.shareableAll(local) }
+            val send = if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris.first())
+            else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            intents.trySend(Intent.createChooser(send.setType("application/pdf").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null))
+        }
+    }
+
+    /** Combine the ticked files, in the order shown. */
+    fun combineSelected(rows: List<io.github.artcraftandroid.pdfcraft.ui.home.FileRow>) {
+        combineFiles.clear()
+        rows.take(12).forEach { combineFiles.add(PickedFile(Uri.parse(it.key), it.name, it.size)) }
+        toolScreen = ToolScreen.Combine(null)
+    }
+
+    fun removeRecents(rows: List<io.github.artcraftandroid.pdfcraft.ui.home.FileRow>) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { recents.remove(rows.map { it.key }.toSet()) }
+            refreshRecents()
+        }
+    }
+
     fun shareFile(row: io.github.artcraftandroid.pdfcraft.ui.home.FileRow) {
         viewModelScope.launch {
             val f = localFileOf(row) ?: return@launch tell("The file couldn't be read.")
@@ -1730,6 +2071,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             require(f.renameTo(target)) { "The file couldn't be renamed." }
                             recents.remove(setOf(row.key))
                             recents.touch(RecentFile(Uri.fromFile(target).toString(), name, System.currentTimeMillis(), 0, target.length()))
+                            bookmarkStore.move(row.key, Uri.fromFile(target).toString())
                         }
                         // what the tools saved to Downloads: MediaStore entries keep their address when renamed
                         u.authority == android.provider.MediaStore.AUTHORITY -> {
@@ -1742,6 +2084,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 ?: error("This file can't be renamed here.")
                             recents.remove(setOf(row.key))
                             recents.touch(RecentFile(renamed.toString(), name, System.currentTimeMillis(), 0, files.size(renamed) ?: 0))
+                            bookmarkStore.move(row.key, renamed.toString())
                         }
                     }
                 }
@@ -1869,12 +2212,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         runTool(doc, "comment_edit", commentArgs(c) + ("color" to color.hex())) { reselect(doc, c) }
     }
 
+    /** Change a comment's opacity or line width (one undo step each). */
+    fun styleComment(doc: OpenDocument, c: io.github.artcraftandroid.pdfcraft.core.CommentInfo, style: Map<String, Any?>) {
+        runTool(doc, "comment_edit", commentArgs(c) + style) { reselect(doc, c) }
+    }
+
     fun editCommentText(doc: OpenDocument, c: io.github.artcraftandroid.pdfcraft.core.CommentInfo, text: String) {
         runTool(doc, "comment_edit", commentArgs(c) + ("contents" to text)) { reselect(doc, c) }
     }
 
     fun moveComment(doc: OpenDocument, c: io.github.artcraftandroid.pdfcraft.core.CommentInfo, dx: Float, dy: Float) {
         runTool(doc, "comment_edit", commentArgs(c) + ("move" to listOf(dx.toDouble(), dy.toDouble()))) { reselect(doc, c) }
+    }
+
+    /** Put a comment in a new rectangle (points, top-left origin): a resize. */
+    fun resizeComment(doc: OpenDocument, c: io.github.artcraftandroid.pdfcraft.core.CommentInfo, rect: List<Float>) {
+        runTool(doc, "comment_edit", commentArgs(c) + ("rect" to rect.map { it.toDouble() })) { reselect(doc, c) }
+    }
+
+    /** Move or resize a Fill & Sign element, keeping it selected. */
+    fun moveFill(doc: OpenDocument, c: io.github.artcraftandroid.pdfcraft.core.CommentInfo, dx: Float, dy: Float) {
+        runTool(doc, "comment_edit", commentArgs(c) + ("move" to listOf(dx.toDouble(), dy.toDouble()))) {
+            selectedFill = doc.comments.firstOrNull { it.page == c.page && it.index == c.index }
+        }
+    }
+
+    fun resizeFill(doc: OpenDocument, c: io.github.artcraftandroid.pdfcraft.core.CommentInfo, rect: List<Float>) {
+        runTool(doc, "comment_edit", commentArgs(c) + ("rect" to rect.map { it.toDouble() })) {
+            selectedFill = doc.comments.firstOrNull { it.page == c.page && it.index == c.index }
+        }
     }
 
     /** After an edit the comment is read again (same page and position). */

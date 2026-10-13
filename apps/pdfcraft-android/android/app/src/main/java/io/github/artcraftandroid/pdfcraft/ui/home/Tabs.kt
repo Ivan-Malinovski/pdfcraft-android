@@ -147,6 +147,12 @@ private fun OnThisDevice(vm: AppViewModel) {
 /** A tool of the Tools tab: its tile, name and one line about it. */
 private class HubTool(val icon: ImageVector, val name: String, val about: String, val hue: Color, val categories: Set<String>, val go: () -> Unit)
 
+/** Where a category lists its tools in an order of its own (the rest keep the All order). */
+private val CategoryOrder = mapOf(
+    "Edit" to listOf("Edit PDF", "Crop pages", "Organize pages", "Combine files", "Set password"),
+    "Convert" to listOf("Export PDF", "Compress PDF"),
+)
+
 /** Tools: every tool, by category (All, Read, Create, Edit, Convert), as outlined cards. */
 @Composable
 fun ToolsTab(vm: AppViewModel) {
@@ -186,7 +192,7 @@ fun ToolsTab(vm: AppViewModel) {
             GridCells.Adaptive(140.dp), modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            items(tools.filter { cat == "All" || cat in it.categories }) { t ->
+            items(tools.filter { cat == "All" || cat in it.categories }.sortedBy { t -> CategoryOrder[cat]?.indexOf(t.name)?.takeIf { it >= 0 } ?: Int.MAX_VALUE }) { t ->
                 Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface)
                         .border(1.dp, c.divider, RoundedCornerShape(12.dp)).clickable(onClick = t.go).padding(16.dp).semantics { contentDescription = t.name },
@@ -218,6 +224,8 @@ fun SearchTab(vm: AppViewModel) {
             Spacer(Modifier.width(10.dp))
             BasicTextField(
                 value = query, onValueChange = { query = it }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { vm.addRecentSearch(query) }),
                 textStyle = TextStyle(fontFamily = Inter, fontSize = 16.sp, color = c.text), cursorBrush = SolidColor(c.accent),
                 modifier = Modifier.weight(1f).semantics { contentDescription = "Search your files" },
                 decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search your files", color = c.textSecondary, fontSize = 16.sp); inner() } },
@@ -225,8 +233,32 @@ fun SearchTab(vm: AppViewModel) {
             if (query.isNotEmpty()) BarIcon(LucideIcons.X, "Clear", { query = "" }, size = 32.dp)
         }
         if (query.isBlank()) {
-            EmptyState(LucideIcons.Search, "Search your files", "Find PDFs on this phone by name.")
+            val recent = vm.recentSearches
+            if (recent.isEmpty()) {
+                EmptyState(LucideIcons.Search, "Search your files", "Find PDFs on this phone by name.")
+                return@Column
+            }
+            // the last searches, to run again with a tap
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent searches", color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text("Clear", color = c.toolAccent, fontSize = 15.sp, modifier = Modifier.clickable { vm.clearRecentSearches() }.padding(12.dp))
+            }
+            LazyColumn(Modifier.weight(1f)) {
+                items(recent, key = { it }) { q ->
+                    Row(Modifier.fillMaxWidth().height(52.dp).clickable { query = q }.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(LucideIcons.Clock, null, tint = c.icon, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(16.dp))
+                        Text(q, color = c.text, fontSize = 16.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                        BarIcon(LucideIcons.X, "Remove $q", { vm.removeRecentSearch(q) }, size = 40.dp)
+                    }
+                }
+            }
             return@Column
+        }
+        // a search left in place for a moment counts as one made
+        LaunchedEffect(query) {
+            kotlinx.coroutines.delay(2000)
+            if (vm.searchFiles(query).isNotEmpty()) vm.addRecentSearch(query)
         }
         val results = vm.searchFiles(query).let { list ->
             when (sort) {

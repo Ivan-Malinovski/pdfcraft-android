@@ -14,6 +14,10 @@
          granting it makes Android refuse IMAGE_CAPTURE. -->
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
+    <!-- Read aloud keeps reading with PdfCraft in the background (a media notification) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
     <application
         android:name=".PdfcraftApplication"
         android:allowBackup="false"
@@ -52,6 +56,11 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".ReadAloudService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Files of PdfCraft's handed to other apps (share, print, open in) -->
         <provider

@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.artcraftandroid.pdfcraft.ui.LocalUndo
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -169,6 +170,8 @@ private fun TapLayer(doc: OpenDocument, onTap: (PagePoint) -> Unit) {
 @Composable
 private fun DrawLayer(vm: AppViewModel, doc: OpenDocument) {
     val strokes = remember { mutableStateListOf<InkStroke>() }
+    // strokes taken back, for redo; a new stroke clears them
+    val undone = remember { mutableStateListOf<InkStroke>() }
     var current by remember { mutableStateOf<InkStroke?>(null) }
     val prefs = vm.toolPrefs
     val color = prefs.color(StyledTool.Ink)
@@ -194,10 +197,16 @@ private fun DrawLayer(vm: AppViewModel, doc: OpenDocument) {
                 )
             }
             strokes.clear()
+            undone.clear()
         }
-        doc.undoTool = { if (strokes.isNotEmpty()) { strokes.removeAt(strokes.lastIndex); true } else false }
+        doc.localUndo = LocalUndo(
+            canUndo = { strokes.isNotEmpty() },
+            canRedo = { undone.isNotEmpty() },
+            undo = { if (strokes.isNotEmpty()) undone.add(strokes.removeAt(strokes.lastIndex)) },
+            redo = { if (undone.isNotEmpty()) strokes.add(undone.removeAt(undone.lastIndex)) },
+        )
         onDispose {
-            doc.undoTool = null
+            doc.localUndo = null
         }
     }
     // press and hold: where the finger has been still since, and when it last moved further
@@ -221,6 +230,7 @@ private fun DrawLayer(vm: AppViewModel, doc: OpenDocument) {
                 stillAt = p
                 movedAt = System.currentTimeMillis()
                 current = InkStroke(at.page).also { it.points.add(Offset(at.x, at.y)); strokes.add(it) }
+                undone.clear()
             },
             onMove = { p ->
                 val s = current ?: return@toolGestures
@@ -436,21 +446,7 @@ fun PropertyPicker(vm: AppViewModel, tool: StyledTool, picker: Picker, markup: T
             }
             Picker.Width -> {
                 Text("Line thickness", color = c.text, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, bottom = 12.dp))
-                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center) {
-                    val ink = prefs.color(StyledTool.Ink)
-                    InkWidths.forEachIndexed { i, w ->
-                        val selected = prefs.inkWidth == w
-                        Box(
-                            Modifier.size(48.dp)
-                                .then(if (selected) Modifier.border(1.5.dp, c.accent, RoundedCornerShape(4.dp)) else Modifier)
-                                .clickable(role = Role.RadioButton) { prefs.updateInkWidth(w) }
-                                .semantics { contentDescription = "Stroke width ${i + 1}" },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Box(Modifier.width(28.dp).height((1 + i * 1.2f).dp).background(ink))
-                        }
-                    }
-                }
+                InkWidthRow(prefs.color(StyledTool.Ink), prefs.inkWidth) { prefs.updateInkWidth(it) }
             }
             Picker.TextSize -> {
                 Text("Text size", color = c.text, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, bottom = 4.dp))
@@ -468,6 +464,25 @@ fun PropertyPicker(vm: AppViewModel, tool: StyledTool, picker: Picker, markup: T
                 Spacer(Modifier.height(8.dp))
             }
             Picker.None -> Unit
+        }
+    }
+}
+
+/** The seven line widths as bars of growing thickness, the chosen one framed. */
+@Composable
+fun InkWidthRow(color: Color, selected: Float?, onPick: (Float) -> Unit) {
+    val c = pdfColors
+    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center) {
+        InkWidths.forEachIndexed { i, w ->
+            Box(
+                Modifier.size(48.dp)
+                    .then(if (selected == w) Modifier.border(1.5.dp, c.accent, RoundedCornerShape(4.dp)) else Modifier)
+                    .clickable(role = Role.RadioButton) { onPick(w) }
+                    .semantics { contentDescription = "Stroke width ${i + 1}" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.width(28.dp).height((1 + i * 1.2f).dp).background(color))
+            }
         }
     }
 }

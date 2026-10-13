@@ -61,8 +61,11 @@ class OpenDocument(
     /** What the active tool still holds (ink being drawn), to add when the tool is left. */
     var commitTool: (() -> Unit)? = null
 
-    /** Undo inside the active tool (the last stroke drawn); true when it took something back. */
-    var undoTool: (() -> Boolean)? = null
+    /**
+     * Undo and redo inside the active tool (strokes drawn but not yet added): while it is set the
+     * top bar's undo and redo act on it and never reach the document, as the reference's do.
+     */
+    var localUndo by mutableStateOf<LocalUndo?>(null)
 
     /** The file name without its extension, as the reference titles documents. */
     val title: String get() = info.name.removeSuffix(".pdf").removeSuffix(".PDF")
@@ -78,3 +81,6 @@ class OpenDocument(
         selection.clear()
     }
 }
+
+/** A tool's own undo history (see [OpenDocument.localUndo]); the checks read Compose state. */
+class LocalUndo(val canUndo: () -> Boolean, val canRedo: () -> Boolean, val undo: () -> Unit, val redo: () -> Unit)
