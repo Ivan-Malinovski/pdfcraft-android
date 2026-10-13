@@ -1,0 +1,10 @@
+*~
+/target
+/target-*/
+/dist
+.DS_Store
+.claude/
+# the text-recognition models are fetched, never committed (apps/pdfcraft-android/fetch-models.sh)
+/assets/models
+# the phone parity tracker stays on this computer, out of the repo
+/docs/parity-mobile.md
