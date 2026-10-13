@@ -33,6 +33,7 @@
   <a href="#tools">Tools</a> ·
   <a href="#home">Home</a> ·
   <a href="#light-theme">Light theme</a> ·
+  <a href="#architecture">Architecture</a> ·
   <a href="#planned-features">Planned features</a> ·
   <a href="#building-instructions">Building</a>
 </p>
@@ -182,6 +183,16 @@
 <td align="center"><sub>Home in the light theme</sub></td>
 </tr>
 </table>
+
+<br>
+
+## Architecture
+
+<p align="center">
+  <img src="docs/images/architecture.png" alt="Architecture diagram: the PDF user chooses a document in the Android experience (Home library, Open document, App state, PDF viewer, Reading tools, Page navigation, Forms and signing, PDF editing, Comment tools), which calls the Rust engine through the Android engine bridge; the document runtime (PDF engine, page rendering, PDF object parser) and its PDF operations (create and extract, document editing, form handling, annotations) and extended capabilities (accessibility checks, automation tools, office export, PDF signatures)" width="700">
+  <br>
+  <sub>How the app and the engine fit together. Generated with <a href="https://gitdiagram.com/artcraft-android/pdfcraft-android">GitDiagram</a>.</sub>
+</p>
 
 <br>
 
