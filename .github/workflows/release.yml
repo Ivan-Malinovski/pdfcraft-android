@@ -40,9 +40,9 @@ jobs:
             echo "::error::'$v' is not a version like 1.2.3 or 1.2.3-beta"
             exit 1
           fi
-          # the tag must be the version gradle.properties names
+          # the tag must be the version gradle.properties names (F-Droid builds from that file)
           if [ "$v" != "$listed" ]; then
-            echo "::error::the tag is v$v but gradle.properties says pdfcraft.version=$listed: set it before tagging"
+            echo "::error::the tag is v$v but gradle.properties says pdfcraft.version=$listed: set it (and pdfcraft.versionCode) before tagging"
             exit 1
           fi
           echo "version=$v" >>"$GITHUB_OUTPUT"
@@ -65,10 +65,6 @@ jobs:
         run: |
           cargo install cargo-ndk --version 4.1.2 --locked
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" >/dev/null
-
-      # Recognize text ships with its models (checked by SHA-256)
-      - name: Text-recognition models
-        run: apps/pdfcraft-android/fetch-models.sh
 
       - name: Release key
         env:

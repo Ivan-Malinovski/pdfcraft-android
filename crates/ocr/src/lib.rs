@@ -69,6 +69,9 @@ impl Models {
         if let Some(exe) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
             dirs.extend(Self::dirs_beside_exe(&exe));
         }
+        // (not on Android: the app passes its own folder, and the build machine's path in the
+        // library would keep two builds of the same source from being byte-identical)
+        #[cfg(not(target_os = "android"))]
         dirs.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/models"));
         dirs
     }

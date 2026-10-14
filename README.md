@@ -224,7 +224,7 @@ PdfCraft for Android is in beta.
 
 * Clone this repository
 * Make sure you have at least 3 GB of free disk space
-* optionally run `apps/pdfcraft-android/fetch-models.sh` for Recognize text (12 MB of models; without them the app builds and the tool says it isn't installed)
+* Recognize text's models (12 MB, CC-BY-SA-4.0) are in `assets/models/`; `apps/pdfcraft-android/fetch-models.sh` downloads them again if you need to
 * enter `apps/pdfcraft-android/android` and run `./gradlew assembleRelease`, or open that folder in Android Studio and press Run.
 
 Build time dependencies:
