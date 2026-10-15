@@ -1,5 +1,7 @@
 Categories:
+  - Ebook Reader
   - Reading
+  - Writing
 License: MIT
 AuthorName: artcraft-android
 SourceCode: https://github.com/artcraft-android/pdfcraft-android
@@ -10,6 +12,8 @@ AutoName: PdfCraft
 
 RepoType: git
 Repo: https://github.com/artcraft-android/pdfcraft-android.git
+Binaries: 
+  https://github.com/artcraft-android/pdfcraft-android/releases/download/v%v/pdfcraft-android-%v.apk
 
 Builds:
   - versionName: 0.0.2-beta
@@ -21,8 +25,6 @@ Builds:
       - apt-get install -y gcc libc-dev rustup
     gradle:
       - yes
-    binary: 
-      https://github.com/artcraft-android/pdfcraft-android/releases/download/v%v/pdfcraft-android-%v.apk
     prebuild:
       - rustup toolchain install $(sed -n -E 's/^channel = "(.*)"/\1/p' ../../../../rust-toolchain.toml)
         --profile minimal --target aarch64-linux-android
