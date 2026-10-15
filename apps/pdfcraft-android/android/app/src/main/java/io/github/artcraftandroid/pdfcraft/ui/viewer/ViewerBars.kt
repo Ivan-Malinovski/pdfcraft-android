@@ -3,11 +3,14 @@ package io.github.artcraftandroid.pdfcraft.ui.viewer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +37,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
@@ -53,6 +60,7 @@ import io.github.artcraftandroid.pdfcraft.ui.BarIcon
 import io.github.artcraftandroid.pdfcraft.ui.Inter
 import io.github.artcraftandroid.pdfcraft.ui.LucideIcons
 import io.github.artcraftandroid.pdfcraft.ui.pdfColors
+import kotlinx.coroutines.flow.first
 
 /** The viewer's top bar height (the reference's: 56 dp). */
 val TopBarHeight = 57.dp
@@ -260,7 +268,7 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(44.dp).background(if (selected) c.divider else Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)),
+            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) c.divider else Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, null, tint = c.icon, modifier = Modifier.size(24.dp))
@@ -273,27 +281,92 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
                 })
             }
         }
-        // the reference's 11 sp face is narrower than Inter, so a half point less matches its width
-        Text(label, color = c.label, fontSize = 10.5.sp, maxLines = 1, overflow = TextOverflow.Clip, textAlign = TextAlign.Center)
+        // the reference's 11 sp face is narrower than Inter: a half point less gives its height, and
+        // tighter letters its width; the label sits 2.5 dp nearer the icon than the box's edge
+        Text(
+            label, color = c.label, fontSize = 10.5.sp, letterSpacing = (-0.5).sp, maxLines = 1, overflow = TextOverflow.Clip, textAlign = TextAlign.Center,
+            modifier = Modifier.offset(y = (-2.5).dp),
+        )
     }
 }
 
-/** The quick toolbar: the tools the user keeps there (the reference's six at first), then More tools. */
+/** The strip above the quick toolbar's tools that holds its handle. */
+val QuickHandleHeight = 22.dp
+
+/** The quick toolbar's height with its handle, the shortcuts folded away. */
+val QuickBarHeight = BottomBarHeight + QuickHandleHeight
+
+/** A shortcut in the row the quick toolbar's handle pulls up. */
+class QuickChip(val label: String, val icon: ImageVector, val tint: Color, val onClick: () -> Unit)
+
+/**
+ * The quick toolbar: a handle, then the tools the user keeps there (the reference's six at first)
+ * and More tools. Pulling the handle up (or tapping it) shows a row of [chips] above the tools,
+ * scrolling sideways; pulling it down folds them away. No line along its top, as the reference.
+ */
 @Composable
 fun QuickToolbar(
     tools: List<QuickTool>,
     onTool: (QuickTool) -> Unit,
     onMoreTools: () -> Unit,
     moreToolsOpen: Boolean,
+    chips: List<QuickChip> = emptyList(),
 ) {
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine().background(pdfColors.surface)) {
+    val c = pdfColors
+    var open by remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().background(c.surface)) {
         val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
         val shown = tools.take(slots)
         val itemW = minOf(72.dp, (maxWidth - 16.dp) / maxOf(7, shown.size + 1))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = itemW)
-            QuickItem(LucideIcons.LayoutGrid, "More tools", onMoreTools, selected = moreToolsOpen, width = itemW)
+        Column(
+            Modifier.fillMaxWidth().pointerInput(chips.isNotEmpty()) {
+                if (chips.isEmpty()) return@pointerInput
+                var pulled = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { pulled = 0f },
+                    onDragEnd = { if (pulled < -8f) open = true else if (pulled > 8f) open = false },
+                ) { _, dy -> pulled += dy }
+            },
+        ) {
+            Box(
+                Modifier.fillMaxWidth().height(QuickHandleHeight)
+                    .clickable(enabled = chips.isNotEmpty(), role = Role.Button) { open = !open }
+                    .semantics { contentDescription = if (open) "Hide shortcuts" else "Show shortcuts" },
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                // measured on the dark bar; the light bar's grey is our own match
+                val handle = if (c.dark) Color(0xFF6A6A6A) else Color(0xFFC4C4C4)
+                Box(Modifier.padding(top = 15.dp).size(40.dp, 4.dp).background(handle, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
+            }
+            androidx.compose.animation.AnimatedVisibility(open && chips.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                        .padding(start = 18.dp, end = 18.dp, top = 5.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                ) { for (chip in chips) QuickChipView(chip) }
+            }
+            Row(Modifier.fillMaxWidth().height(BottomBarHeight), horizontalArrangement = Arrangement.Center) {
+                for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = itemW)
+                QuickItem(LucideIcons.LayoutGrid, "More tools", onMoreTools, selected = moreToolsOpen, width = itemW)
+            }
         }
+    }
+}
+
+/** One shortcut: its coloured icon and name on a dark rounded box, 37 dp tall. */
+@Composable
+private fun QuickChipView(chip: QuickChip) {
+    val c = pdfColors
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+    Row(
+        Modifier.height(37.dp).clip(shape).background(if (c.dark) Color(0xFF080808) else Color(0xFFEDEDED))
+            .clickable(role = Role.Button, onClick = chip.onClick).padding(start = 7.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // sized against the reference: its icon draws about 18 dp, its name 14 sp in a narrower face
+        Icon(chip.icon, null, tint = chip.tint, modifier = Modifier.size(21.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(chip.label, color = c.text, fontSize = 14.sp, letterSpacing = (-0.65).sp, maxLines = 1)
     }
 }
 
@@ -307,14 +380,39 @@ fun Modifier.barTopLine(): Modifier {
     }
 }
 
-/** A tool's sub-toolbar: its buttons centred on the bar, groups split by thin lines. */
+/**
+ * A tool's sub-toolbar: its buttons centred on the bar, groups split by thin lines. As the reference:
+ * the buttons keep their size, and when they don't all fit (a narrow screen, a large display size)
+ * the bar scrolls sideways, sliding to a tool when it's chosen. (Squeezing the buttons together to
+ * fit was tried and left out; see docs/parity-mobile.md, "Tool bars on narrow screens".)
+ */
 @Composable
 fun SubToolbar(content: @Composable () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine().background(pdfColors.surface),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) { content() }
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine().background(pdfColors.surface)) {
+        Row(
+            Modifier.fillMaxHeight().horizontalScroll(scroll).widthIn(min = maxWidth),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) { androidx.compose.runtime.CompositionLocalProvider(LocalSubToolbarScroll provides scroll) { content() } }
+    }
+}
+
+/** The scrolling bar a sub-toolbar tool sits in (none outside one). */
+private val LocalSubToolbarScroll = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.foundation.ScrollState?> { null }
+
+/** When the tool becomes the chosen one, the bar scrolls to bring it to the start (as far as it goes). */
+@Composable
+private fun Modifier.slideToWhenChosen(selected: Boolean): Modifier {
+    val scroll = LocalSubToolbarScroll.current ?: return this
+    var x by remember { androidx.compose.runtime.mutableStateOf<Int?>(null) }
+    LaunchedEffect(selected) {
+        if (!selected) return@LaunchedEffect
+        // once the tool has been placed on the bar
+        val at = androidx.compose.runtime.snapshotFlow { x }.first { it != null } ?: return@LaunchedEffect
+        scroll.animateScrollTo(at)
+    }
+    return onPlaced { x = it.positionInParent().x.toInt() }
 }
 
 /** A sub-toolbar tool: 62 dp apart, as the reference spaces them. */
@@ -328,7 +426,7 @@ fun SubTool(icon: ImageVector, description: String, selected: Boolean, onClick: 
 fun SubTextField(description: String, selected: Boolean, onClick: () -> Unit) {
     val tint = if (selected) pdfColors.toolAccent else pdfColors.icon
     Box(
-        Modifier.width(62.dp).height(54.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -349,7 +447,7 @@ fun SubTextField(description: String, selected: Boolean, onClick: () -> Unit) {
 fun SubDot(description: String, selected: Boolean, onClick: () -> Unit) {
     val tint = if (selected) pdfColors.toolAccent else pdfColors.icon
     Box(
-        Modifier.width(62.dp).height(54.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) { Box(Modifier.size(8.dp).background(tint, androidx.compose.foundation.shape.CircleShape)) }
 }
@@ -365,7 +463,7 @@ private fun SubButton(icon: ImageVector, description: String, selected: Boolean,
     val c = pdfColors
     val tint = if (selected && !shaded) c.toolAccent else c.icon
     Box(
-        Modifier.width(width).height(54.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(width).height(54.dp).slideToWhenChosen(selected && !shaded).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         if (shaded && selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, androidx.compose.foundation.shape.RoundedCornerShape(5.dp)))

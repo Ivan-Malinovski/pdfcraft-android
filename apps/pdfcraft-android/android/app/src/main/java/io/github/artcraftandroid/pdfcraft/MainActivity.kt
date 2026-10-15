@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
     private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> vm.addImage(uri) }
     private val pickSignature = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> vm.importSignatureImage(uri) }
     private val pickPhotos = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris -> vm.onPhotosPicked(uris) }
-    private val storagePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { vm.onResumed() }
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::addLocalFolder) }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.onMicPermission(granted) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,7 +98,9 @@ class MainActivity : ComponentActivity() {
         }
         lifecycleScope.launch { for (d in vm.imagePicks) launchSafely { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } }
         lifecycleScope.launch { for (u in vm.photoPicks) launchSafely { pickPhotos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } }
-        lifecycleScope.launch { for (u in vm.accessRequests) askForFileAccess() }
+        // the folder picker opens at Documents, where PDFs usually are (Download itself can't be chosen)
+        val documents = android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Documents")
+        lifecycleScope.launch { for (u in vm.accessRequests) launchSafely { pickFolder.launch(documents) } }
         lifecycleScope.launch {
             for (u in vm.micRequests) {
                 // refused before: explain first (the reference's order); otherwise Android's own prompt
@@ -134,17 +136,6 @@ class MainActivity : ComponentActivity() {
             vm.tell("No app on this phone can do that.")
         } catch (e: SecurityException) {
             vm.tell("Android didn't allow that.")
-        }
-    }
-
-    /** All-files access (Android 11+), or the storage permission before it. */
-    private fun askForFileAccess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            launchSafely {
-                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
-            }
-        } else {
-            storagePermission.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
 

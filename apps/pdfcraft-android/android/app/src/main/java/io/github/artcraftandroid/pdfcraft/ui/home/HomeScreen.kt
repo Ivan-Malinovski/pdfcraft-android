@@ -211,8 +211,8 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit) {
                         when (tab) {
                             0 -> EmptyState(LucideIcons.Clock, "No recent files", "Files you open will appear here.", "Open file", onBrowse)
                             1 -> EmptyState(LucideIcons.Star, "No starred files", "Star a file from its menu to find it here quickly.")
-                            else -> if (!vm.hasFileAccess) EmptyState(LucideIcons.Smartphone, "Files on your device", "To see the PDFs on this phone, allow access to all files in the Settings.", "Allow access") { vm.requestFileAccess() }
-                            else EmptyState(LucideIcons.Smartphone, "No PDFs on your device", "PDFs you download or save will appear here.")
+                            else -> if (!vm.hasFileAccess) EmptyState(LucideIcons.Smartphone, "Files on your device", "Choose folders to list PDFs from, such as Documents or a folder inside Download. Files you open from anywhere stay in Recent.", "Add a folder") { vm.requestFileAccess() }
+                            else EmptyState(LucideIcons.Smartphone, "No PDFs in your folders", "PDFs in the folders you added will appear here.", "Add a folder") { vm.requestFileAccess() }
                         }
                     }
                 } else if (vm.gridView) {

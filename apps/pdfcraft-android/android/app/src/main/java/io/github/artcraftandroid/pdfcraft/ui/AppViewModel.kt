@@ -103,6 +103,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Open the PDF at [uri] (picked, shared, or from Recent), asking for its password if it has one. */
     fun open(uri: Uri, password: String? = null) {
+        // a file opened from another app comes to the front, not under Settings
+        settingsOpen = false
+        showLicences = false
         viewModelScope.launch {
             val eng = engine ?: application.engine.await().getOrNull() ?: run { tell(engineProblem ?: "PdfCraft couldn't start."); return@launch }
             opening = true
@@ -253,6 +256,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         save(doc)
+        // Recent shows the size the file has now, not the size it had when opened
+        withContext(Dispatchers.IO) {
+            doc.source?.let { src -> files.size(src)?.let { size -> recents.update(src.toString()) { it.copy(size = size) } } }
+        }
         closeQuietly(eng, doc)
     }
 
@@ -472,6 +479,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * Up for the previous one, the arrows to scroll, Ctrl+P to print, Ctrl and + or − to zoom.
      */
     fun viewerKey(keyCode: Int, ctrl: Boolean): Boolean {
+        if (!keyboardShortcuts) return false
         val doc = document ?: return false
         if (toolScreen != null || readingMode) return false
         val v = doc.viewer
@@ -728,6 +736,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateKeepScreenOn(on: Boolean) {
         keepScreenOn = on
         appPrefs.edit().putBoolean("keepScreenOn", on).apply()
+    }
+
+    /** The viewer's keyboard shortcuts (Preferences; off until turned on, as the reference has them). */
+    var keyboardShortcuts by mutableStateOf(appPrefs.getBoolean("keyboardShortcuts", false))
+        private set
+
+    fun updateKeyboardShortcuts(on: Boolean) {
+        keyboardShortcuts = on
+        appPrefs.edit().putBoolean("keyboardShortcuts", on).apply()
     }
 
     /** The app's theme (Preferences ▸ Theme): the system's, or always light or dark. */
@@ -1890,11 +1907,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** All-files access: the activity opens the system page for it. */
+    /** Adding a folder to On this device: the activity opens the system's folder picker. */
     val accessRequests = Channel<Unit>(Channel.CONFLATED)
 
     fun requestFileAccess() {
         accessRequests.trySend(Unit)
+    }
+
+    /** The folders On this device lists, with their names. */
+    fun localFolders(): List<Pair<Uri, String>> {
+        val app = getApplication<Application>()
+        return io.github.artcraftandroid.pdfcraft.engine.LocalFiles.folders(app).map { it to io.github.artcraftandroid.pdfcraft.engine.LocalFiles.folderName(app, it) }
+    }
+
+    /** A folder chosen in the picker: list its PDFs from now on. */
+    fun addLocalFolder(tree: Uri) {
+        io.github.artcraftandroid.pdfcraft.engine.LocalFiles.addFolder(getApplication(), tree)
+        hasFileAccess = io.github.artcraftandroid.pdfcraft.engine.LocalFiles.hasAccess(getApplication())
+        scanLocal(force = true)
+    }
+
+    /** Stop listing [tree]. */
+    fun removeLocalFolder(tree: Uri) {
+        io.github.artcraftandroid.pdfcraft.engine.LocalFiles.removeFolder(getApplication(), tree)
+        hasFileAccess = io.github.artcraftandroid.pdfcraft.engine.LocalFiles.hasAccess(getApplication())
+        scanLocal(force = true)
     }
 
     /** Back from the access page (or the app resumed): look again. */
@@ -1905,12 +1942,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refreshRecents()
     }
 
-    /** A local path for [uri]'s thumbnail: the file itself, or the app's working copy of it. */
+    /** What [uri]'s thumbnail is drawn from: the file itself, the app's working copy, or the document. */
     private fun thumbPathFor(uri: String): String? {
         val u = Uri.parse(uri)
         return when (u.scheme) {
             "file" -> u.path
-            else -> files.existingCopy(u)?.absolutePath
+            else -> files.existingCopy(u)?.absolutePath ?: uri
         }
     }
 
@@ -1928,7 +1965,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val stars = recentList.filter { it.starred }.flatMap { listOf(it.uri, sameFile(it.name, it.size)) }.toSet()
         return localFiles.map { f ->
             val key = f.uri.toString()
-            io.github.artcraftandroid.pdfcraft.ui.home.FileRow(key, f.name, f.path, f.folder, f.modified, f.size, key in stars || sameFile(f.name, f.size) in stars) { open(f.uri) }
+            io.github.artcraftandroid.pdfcraft.ui.home.FileRow(key, f.name, f.path ?: key, f.folder, f.modified, f.size, key in stars || sameFile(f.name, f.size) in stars) { open(f.uri) }
         }
     }
 

@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -119,16 +120,24 @@ private fun OnThisDevice(vm: AppViewModel) {
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = c.surface) {
                     DropdownMenuItem(text = { Text("Sort by name") }, onClick = { sort = 1; menu = false }, trailingIcon = { if (sort == 1) Icon(LucideIcons.Check, null, tint = c.accent) })
                     DropdownMenuItem(text = { Text("Sort by date") }, onClick = { sort = 0; menu = false }, trailingIcon = { if (sort == 0) Icon(LucideIcons.Check, null, tint = c.accent) })
+                    HorizontalDivider(color = c.divider)
+                    DropdownMenuItem(text = { Text("Add a folder") }, onClick = { menu = false; vm.requestFileAccess() }, leadingIcon = { Icon(LucideIcons.FolderPlus, null, tint = c.icon) })
+                    // the folders listed here, each with a way to stop listing it
+                    for ((tree, name) in vm.localFolders()) {
+                        DropdownMenuItem(text = { Text("Stop listing $name") }, onClick = { menu = false; vm.removeLocalFolder(tree) }, leadingIcon = { Icon(LucideIcons.Folder, null, tint = c.icon) })
+                    }
                 }
             }
         }
-        if (!vm.hasFileAccess) {
-            EmptyState(LucideIcons.Smartphone, "Files on your device", "To list the PDFs on this phone, PdfCraft needs access to all files. Allow it in the Settings.", "Go to settings") { vm.requestFileAccess() }
+        val rows = vm.localRows().let { if (sort == 1) it.sortedBy { r -> r.name.lowercase() } else it }
+        // what PdfCraft saved itself shows before any folder is added
+        if (!vm.hasFileAccess && rows.isEmpty()) {
+            EmptyState(LucideIcons.Smartphone, "Files on your device", "Choose folders to list PDFs from, such as Documents or a folder inside Download (Android doesn't let apps list the whole Download folder). PdfCraft sees only the folders you choose, and files you open from anywhere stay in Recent.", "Add a folder") { vm.requestFileAccess() }
             return@Column
         }
-        val rows = vm.localRows().let { if (sort == 1) it.sortedBy { r -> r.name.lowercase() } else it }
         if (rows.isEmpty()) {
-            EmptyState(LucideIcons.FileText, if (vm.scanning) "Looking for PDFs…" else "No PDFs on your device", if (vm.scanning) "" else "PDFs you download or save will appear here.")
+            if (vm.scanning) EmptyState(LucideIcons.FileText, "Looking for PDFs…", "")
+            else EmptyState(LucideIcons.FileText, "No PDFs in your folders", "PDFs in the folders you added will appear here.", "Add a folder") { vm.requestFileAccess() }
             return@Column
         }
         LazyColumn(Modifier.weight(1f)) {
@@ -318,8 +327,8 @@ fun SettingsScreen(vm: AppViewModel) {
                 "help" -> {
                     val uri = LocalUriHandler.current
                     var leaving by remember { mutableStateOf<String?>(null) }
-                    SheetRow(LucideIcons.CircleHelp, "Help", { leaving = "https://github.com/storytold/pdfcraft#readme" })
-                    SheetRow(LucideIcons.MessageSquare, "Report a problem or request a feature", { leaving = "https://github.com/storytold/pdfcraft/issues" })
+                    SheetRow(LucideIcons.CircleHelp, "Help", { leaving = "$APP_REPO#readme" })
+                    SheetRow(LucideIcons.MessageSquare, "Report a problem or request a feature", { leaving = "$APP_REPO/issues" })
                     leaving?.let { url ->
                         io.github.artcraftandroid.pdfcraft.ui.PdfDialog(
                             onDismiss = { leaving = null }, title = "Leaving PdfCraft", confirm = "Continue", onConfirm = { leaving = null; uri.openUri(url) },
@@ -352,6 +361,15 @@ private fun Preferences(vm: AppViewModel) {
         PdfSwitch(vm.keepScreenOn, { vm.updateKeepScreenOn(it) })
     }
     Text("Keeps the screen on while you read, for up to 30 minutes without a touch.", color = c.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp))
+    SheetDivider()
+    Section("Keyboard")
+    SheetRow(null, "Keyboard shortcuts", { vm.updateKeyboardShortcuts(!vm.keyboardShortcuts) }) {
+        PdfSwitch(vm.keyboardShortcuts, { vm.updateKeyboardShortcuts(it) })
+    }
+    Text(
+        "With a keyboard connected: N or Page Down for the next page, P or Page Up for the previous one, the arrow keys to scroll, Ctrl+P to print, Ctrl and + or − to zoom.",
+        color = c.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp),
+    )
     Spacer(Modifier.height(24.dp))
     if (authorDialog) {
         var name by remember { mutableStateOf(vm.toolPrefs.author) }
@@ -361,6 +379,9 @@ private fun Preferences(vm: AppViewModel) {
         ) { io.github.artcraftandroid.pdfcraft.ui.PdfField(name, { name = it }, "Your name") }
     }
 }
+
+/** PdfCraft for Android's own repository: its help, its issues and its source. */
+private const val APP_REPO = "https://github.com/artcraft-android/pdfcraft-android"
 
 @Composable
 private fun Section(title: String) {
@@ -383,7 +404,8 @@ private fun About(vm: AppViewModel) {
     SheetDivider()
     Section("Legal")
     SheetRow(null, "Open-source licences", { vm.showLicences = true })
-    SheetRow(null, "Source code", { uri.openUri("https://github.com/storytold/pdfcraft") })
+    SheetRow(null, "Source code", { uri.openUri(APP_REPO) })
+    SheetRow(null, "PdfCraft engine", { uri.openUri("https://github.com/storytold/pdfcraft") })
     Text(
         "PdfCraft for Android is built on PdfCraft's Rust engine. MIT OR Apache-2.0. PdfCraft is not affiliated with Adobe; Acrobat is a trademark of Adobe Inc.",
         color = c.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(20.dp), overflow = TextOverflow.Visible,

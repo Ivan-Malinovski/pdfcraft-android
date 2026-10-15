@@ -106,7 +106,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     val statusPx = maxOf(WindowInsets.statusBars.getTop(density), WindowInsets.displayCutout.getTop(density)).toFloat()
     val navPx = WindowInsets.navigationBars.getBottom(density).toFloat()
     val topPx = with(density) { TopBarHeight.toPx() }
-    val bottomPx = with(density) { BottomBarHeight.toPx() }
+    val bottomPx = with(density) { (if (ctl.tool == ViewerTool.None) QuickBarHeight else BottomBarHeight).toPx() }
     // keyed on the document too: one opened over another (Create, Combine) has a fresh page view
     LaunchedEffect(doc, ctl.barsVisible, statusPx, navPx, ctl.searching, ctl.tool, vm.readingMode) {
         val bottomShown = ctl.barsVisible && !ctl.searching && !vm.readingMode
@@ -356,6 +356,12 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                             onTool = { vm.runQuickTool(doc, it) },
                             onMoreTools = { ctl.sheet = if (ctl.sheet == ViewerSheet.MoreTools) ViewerSheet.None else ViewerSheet.MoreTools },
                             moreToolsOpen = ctl.sheet == ViewerSheet.MoreTools,
+                            chips = listOf(
+                                QuickChip(if (vm.isStarred(doc)) "Unstar this file" else "Star this file", LucideIcons.Star, ToolHues.combine) { vm.toggleStar(doc) },
+                                QuickChip("Read aloud", LucideIcons.Headphones, ToolHues.read) { vm.startReadAloud(doc) },
+                                QuickChip("Create PDF", QuickTool.Create.icon, ToolHues.create) { vm.runQuickTool(doc, QuickTool.Create) },
+                                QuickChip("Organize pages", QuickTool.Organize.icon, ToolHues.organize) { vm.runQuickTool(doc, QuickTool.Organize) },
+                            ),
                         )
                     } else {
                         ToolSubToolbar(vm, doc)
