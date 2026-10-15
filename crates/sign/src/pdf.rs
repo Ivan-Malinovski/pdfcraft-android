@@ -135,8 +135,9 @@ impl DigestCache {
         #[cfg(test)]
         self.discovery_scans.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut complete = true;
-        let candidates: Vec<_> = doc
-            .scan_objects_checked()
+        // A timestamp has a /ByteRange: only objects whose text says so are parsed.
+        let mut candidates: Vec<_> = doc
+            .scan_objects_mentioning(b"ByteRange")
             .filter_map(|(reference, object)| match object {
                 Ok(object) => is_document_timestamp(&object).then_some(reference),
                 Err(_) => {
@@ -145,6 +146,8 @@ impl DigestCache {
                 }
             })
             .collect();
+        // the scan reads object streams together, not in number order
+        candidates.sort_unstable_by_key(|r| r.num);
         if eligible
             && complete
             && candidates.len() <= DISCOVERY_CACHE_LIMIT

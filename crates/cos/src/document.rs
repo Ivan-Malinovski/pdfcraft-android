@@ -145,6 +145,24 @@ impl ObjectReader {
 
     pub(crate) fn try_get(&mut self, reference: ObjRef) -> Result<Arc<Object>, CosError> {
         let object = self.document.try_get(reference.num);
+        self.evict_streams(reference.num);
+        // Parsed objects stay cached (an indirect /Length or a dictionary read again costs a
+        // lookup, not a parse) until the cache passes its object count or holds more than
+        // STREAM_BYTES of data of its own. Streams read from the file are views into the
+        // input bytes, which the document keeps anyway, so they don't count; decrypted
+        // streams and strings do. Checked after failed loads too: resolving a /Length may
+        // have cached large objects.
+        if let Ok(mut cache) = self.document.cache.lock() {
+            let data = &self.document.data;
+            if cache.len() >= Self::OBJECTS || cache.values().fold(0usize, |n, o| n.saturating_add(owned_bytes(o, data, 0))) > Self::STREAM_BYTES {
+                cache.clear();
+            }
+        }
+        object
+    }
+
+    /// Keep the decoded object streams within bounds, retaining the one `num` is in.
+    fn evict_streams(&mut self, num: u32) {
         // A missed eviction here only costs a re-parse, so never fail the read on a poisoned
         // lock. The editing-cache evictors propagate instead; they guard user edits.
         if let Ok(mut streams) = self.document.objstms.lock() {
@@ -159,28 +177,48 @@ impl ObjectReader {
                 if bytes > Self::STREAM_BYTES || streams.len() >= Self::OBJECTS {
                     // Retain one oversized active stream so its next object does not require
                     // decoding it again. That stream still obeys the document's decode cap.
-                    let current = match self.document.xref_entry(reference.num) {
+                    let current = match self.document.xref_entry(num) {
                         Some(XrefEntry::InStream { stream, .. }) => Some(stream),
                         _ => None,
                     };
-                    streams.retain(|num, _| Some(*num) == current);
+                    streams.retain(|n, _| Some(*n) == current);
                 }
                 self.decoded_count = streams.len();
             }
         }
-        // Parsed objects stay cached (an indirect /Length or a dictionary read again costs a
-        // lookup, not a parse) until the cache passes its object count or holds more than
-        // STREAM_BYTES of data of its own. Streams read from the file are views into the
-        // input bytes, which the document keeps anyway, so they don't count; decrypted
-        // streams and strings do. Checked after failed loads too: resolving a /Length may
-        // have cached large objects.
-        if let Ok(mut cache) = self.document.cache.lock() {
-            let data = &self.document.data;
-            if cache.len() >= Self::OBJECTS || cache.values().fold(0usize, |n, o| n.saturating_add(owned_bytes(o, data, 0))) > Self::STREAM_BYTES {
-                cache.clear();
-            }
+    }
+
+    /// Whether object `num`'s source text contains `needle`, without parsing it: its slice of
+    /// the decoded object stream, or the file from its offset to `endobj`. True when that can't
+    /// be told cheaply (an edited object, an unreadable stream), so a scan then reads it.
+    pub(crate) fn mentions(&mut self, num: u32, needle: &[u8]) -> bool {
+        if self.document.overlay.contains_key(&num) {
+            return true;
         }
-        object
+        match self.document.entries.get(&num).cloned() {
+            Some(XrefEntry::InStream { stream, index }) => {
+                let Ok(stm) = self.document.objstm(stream) else { return true };
+                self.evict_streams(num);
+                // the object's text runs to the next object's offset (the offsets increase)
+                let at = if stm.index.get(index as usize).is_some_and(|(n, _)| *n == num) {
+                    Some(index as usize)
+                } else {
+                    stm.index.iter().position(|(n, _)| *n == num)
+                };
+                let Some(at) = at else { return true };
+                let start = stm.index.get(at).map_or(0, |(_, o)| *o);
+                let end = stm.index.get(at + 1).map(|(_, o)| *o).filter(|&o| o > start).unwrap_or(stm.data.len());
+                stm.data.get(start..end).is_none_or(|text| find(text, needle, 0, text.len()).is_some())
+            }
+            Some(XrefEntry::InFile { offset, .. }) => {
+                let data = &self.document.data;
+                let start = usize::try_from(offset).unwrap_or(usize::MAX).min(data.len());
+                let end = find(data, b"endobj", start, data.len()).unwrap_or(data.len());
+                find(data, needle, start, end).is_some()
+            }
+            // free or absent: reads as null
+            _ => false,
+        }
     }
 }
 
@@ -712,7 +750,7 @@ impl Document {
     /// that may never be used again. Keep their parse caches private and release them in
     /// batches. Returned objects own their data and remain valid after the next batch.
     pub fn scan_objects(&self) -> impl Iterator<Item = (ObjRef, Arc<Object>)> + use<> {
-        let numbers = self.object_numbers();
+        let numbers = self.scan_order();
         let mut reader = self.object_reader();
         numbers.into_iter().map(move |num| {
             let reference = ObjRef::new(num, reader.document.generation(num));
@@ -723,7 +761,38 @@ impl Document {
     /// Like [`Self::scan_objects`], preserving read errors for callers that must distinguish
     /// incomplete discovery from an actual null object. Caches remain private and bounded.
     pub fn scan_objects_checked(&self) -> impl Iterator<Item = (ObjRef, Result<Arc<Object>, CosError>)> + use<> {
-        self.scan_objects_subset(self.object_numbers())
+        self.scan_objects_subset(self.scan_order())
+    }
+
+    /// Like [`Self::scan_objects_checked`], but only the objects whose source text contains
+    /// `needle` are parsed and returned (edited objects always are). A search for objects with a
+    /// given key need not parse the others: a tagged textbook's structure tree held 509 MB of
+    /// `null` entries, which parsed took minutes and gigabytes. A key written with `#xx`
+    /// escapes in the file is not seen.
+    pub fn scan_objects_mentioning(&self, needle: &[u8]) -> impl Iterator<Item = (ObjRef, Result<Arc<Object>, CosError>)> + use<> {
+        let needle = needle.to_vec();
+        let mut reader = self.object_reader();
+        self.scan_order().into_iter().filter_map(move |num| {
+            if !reader.mentions(num, &needle) {
+                return None;
+            }
+            let reference = ObjRef::new(num, reader.document.generation(num));
+            Some((reference, reader.try_get(reference)))
+        })
+    }
+
+    /// [`Self::object_numbers`] in the order a whole-file scan reads cheaply: the objects stored
+    /// in the file first, by number, then each object stream's objects together, stream by
+    /// stream. By number, objects of different streams interleave, and a stream larger than the
+    /// scan's cache was decoded again for each of its objects (a 350 MB textbook's 509 MB object
+    /// stream: 96 decodes, 44 s and gigabytes).
+    pub fn scan_order(&self) -> Vec<u32> {
+        let mut numbers = self.object_numbers();
+        numbers.sort_by_key(|&num| match self.xref_entry(num) {
+            Some(XrefEntry::InStream { stream, index }) => (1u8, stream, index),
+            _ => (0, num, 0),
+        });
+        numbers
     }
 
     /// Inspect selected current objects with the same bounded cache as a whole-file scan.

@@ -436,13 +436,25 @@ pub fn inspect(bytes: Arc<Vec<u8>>, password: Option<&str>) -> Result<DocInfo, O
                 return None;
             }
             inspector.fill(&mut t);
-            (!doc.failed()).then_some(t)
+            Some((t, doc.failed(), doc.limited()))
         }))
         .ok()
         .flatten();
-        if let Some(t) = lazy {
-            *tmp = t;
-            return Ok(());
+        let huge = bytes.len() > LOAD_ALL_MAX;
+        match lazy {
+            Some((mut t, failed, limited)) if !failed || huge => {
+                if limited {
+                    t.warnings.push("Some very large compressed data in this file was not read, so a few links or comments may be missing.".into());
+                }
+                if failed {
+                    t.warnings.push("Some of this file's structure could not be read (bookmarks, comments or fields may be missing).".into());
+                }
+                *tmp = t;
+                return Ok(());
+            }
+            // the compatibility reader holds every object at once (many times the file's size)
+            _ if huge => return Err("the file is too large for the compatibility reader".into()),
+            _ => {}
         }
         let doc = Document::load_mem_with_options(&bytes, options).map_err(|e| e.to_string())?;
         Inspector::new(&doc).fill(tmp);
@@ -453,6 +465,11 @@ pub fn inspect(bytes: Arc<Vec<u8>>, password: Option<&str>) -> Result<DocInfo, O
     }
     Ok(info)
 }
+
+/// Files larger than this never go to lopdf's load-everything reader (the fallback for files the
+/// lazy reader can't read): it keeps every object in memory, many times the file's size, which
+/// a phone can't give. Their lazy result is kept, with a warning, or the structure is skipped.
+const LOAD_ALL_MAX: usize = 96 << 20;
 
 // Commit auxiliary metadata only after inspection succeeds; renderer geometry is the fallback.
 fn inspect_structure(info: &mut DocInfo, fill: impl FnOnce(&mut DocInfo) -> Result<(), String>) {
@@ -1641,6 +1658,50 @@ mod tests {
         // The object stream in the file loads, but the xref puts 3 in the compressed container 4, which is refused.
         assert_eq!(doc.get_object((100_003, 0)).unwrap().as_stream().unwrap().content, b"3 0 5");
         assert!(doc.get_object((3, 0)).is_err());
+    }
+
+    /// An object stream that decodes past the lazy reader's cap leaves its objects out without
+    /// counting as damage, so inspection keeps the lazy result instead of loading every object
+    /// (a 350 MB textbook with a 509 MB object stream took 7.6 GB that way).
+    #[test]
+    fn an_object_stream_over_the_cap_is_limited_not_failed() {
+        // a well-formed file: catalog and page tree in the file, objects 3 and 5 in object stream 4
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut records = vec![[0u8; 7]; 7];
+        records[0] = [0, 0, 0, 0, 0, 255, 255];
+        // the object stream (about 210 bytes) is larger than the cross-reference stream (49), so a
+        // cap between the two opens the file but refuses the object stream
+        let data = format!("3 0 5 2 5 ({})", "x".repeat(200));
+        let objstm = format!("<< /Type /ObjStm /N 2 /First 8 /Length {} >>\nstream\n{data}\nendstream", data.len());
+        let bodies: [(usize, &[u8]); 3] =
+            [(1, b"<< /Type /Catalog /Pages 2 0 R >>"), (2, b"<< /Type /Pages /Kids [] /Count 0 >>"), (4, objstm.as_bytes())];
+        for (id, body) in bodies {
+            records[id][0] = 1;
+            records[id][1..5].copy_from_slice(&(pdf.len() as u32).to_be_bytes());
+            pdf.extend_from_slice(format!("{id} 0 obj\n").as_bytes());
+            pdf.extend_from_slice(body);
+            pdf.extend_from_slice(b"\nendobj\n");
+        }
+        for (id, index) in [(3usize, 0u16), (5, 1)] {
+            records[id][0] = 2;
+            records[id][1..5].copy_from_slice(&4u32.to_be_bytes());
+            records[id][5..7].copy_from_slice(&index.to_be_bytes());
+        }
+        let xref = pdf.len();
+        records[6][0] = 1;
+        records[6][1..5].copy_from_slice(&(xref as u32).to_be_bytes());
+        let data: Vec<u8> = records.concat();
+        pdf.extend_from_slice(format!("6 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Root 1 0 R /Length {} >>\nstream\n", data.len()).as_bytes());
+        pdf.extend_from_slice(&data);
+        pdf.extend_from_slice(format!("\nendstream\nendobj\nstartxref\n{xref}\n%%EOF\n").as_bytes());
+        let pdf = Arc::new(pdf);
+        let roomy = crate::structure::LazyStructure::new_with_limit(pdf.clone(), None, 1 << 20).unwrap();
+        assert!(crate::structure::Structure::get_object(&roomy, (3, 0)).is_ok());
+        assert!(!roomy.failed() && !roomy.limited());
+        let tight = crate::structure::LazyStructure::new_with_limit(pdf, None, 100).unwrap();
+        assert!(crate::structure::Structure::get_object(&tight, (3, 0)).is_err());
+        assert!(tight.limited(), "the cap, not damage");
+        assert!(!tight.failed());
     }
 
     #[test]

@@ -238,3 +238,61 @@ fn page_tree_loops_in_object_streams_do_not_crash_readers() {
     assert!(String::from_utf8_lossy(&packed).contains("/ObjStm"));
     assert_eq!(hayro_pages(&packed), 1);
 }
+
+/// Whole-file scans read each object stream's objects together (the objects stored in the file
+/// first): by number, objects of different streams interleave, and a stream too big for the
+/// scan's cache was decoded again for each of its objects (96 decodes of a 509 MB stream in a
+/// 350 MB textbook: 44 s to list its signatures).
+#[test]
+fn scans_read_each_object_stream_together() {
+    let mut doc = Document::open(Arc::new(fixture())).unwrap();
+    let filler: Vec<_> = (0..600).map(|i| Object::Ref(doc.add(Object::Int(i)))).collect();
+    doc.update_dict(doc.root().unwrap(), |catalog| catalog.set(b"Filler".to_vec(), Object::Array(filler))).unwrap();
+    let packed = write_full(&doc, &SaveOptions::default()).unwrap();
+    let back = Document::open(Arc::new(packed)).unwrap();
+    let order = back.scan_order();
+    let mut sorted = order.clone();
+    sorted.sort_unstable();
+    assert_eq!(sorted, back.object_numbers(), "every object, once");
+    let keys: Vec<_> = order
+        .iter()
+        .map(|&n| match back.xref_entry(n) {
+            Some(pdfcraft_cos::XrefEntry::InStream { stream, index }) => (1u8, stream, index),
+            _ => (0, n, 0),
+        })
+        .collect();
+    assert!(keys.windows(2).all(|w| w[0] < w[1]), "file objects by number, then stream by stream");
+    assert!(keys.iter().any(|k| k.0 == 1), "the save packed objects into object streams");
+    let scanned: Vec<u32> = back.scan_objects().map(|(r, _)| r.num).collect();
+    assert_eq!(scanned, order);
+}
+
+/// A scan for a key parses only the objects whose text names it, in object streams and in the
+/// file alike, and always the edited ones (a tagged textbook's 509 MB structure tree is never
+/// parsed when looking for timestamps).
+#[test]
+fn a_scan_for_a_key_parses_only_objects_that_name_it() {
+    let mut doc = Document::open(Arc::new(fixture())).unwrap();
+    let mut marked = Dict::new();
+    marked.set(b"ByteRange".to_vec(), Object::Array(vec![Object::Int(0)]));
+    let kept = doc.add(Object::Dict(marked.clone()));
+    let filler: Vec<_> = (0..300).map(|i| Object::Ref(doc.add(Object::Int(i)))).collect();
+    // a full save writes what the catalog reaches
+    doc.update_dict(doc.root().unwrap(), |catalog| {
+        catalog.set(b"Marked".to_vec(), Object::Ref(kept));
+        catalog.set(b"Filler".to_vec(), Object::Array(filler));
+    })
+    .unwrap();
+    let packed = write_full(&doc, &SaveOptions::default()).unwrap();
+    let mut back = Document::open(Arc::new(packed)).unwrap();
+    // a full save renumbers: find the marked dictionary the long way
+    let packed_one = back.scan_objects().find(|(_, o)| o.as_dict().is_some_and(|d| d.get(b"ByteRange").is_some())).unwrap().0;
+    assert!(matches!(back.xref_entry(packed_one.num), Some(pdfcraft_cos::XrefEntry::InStream { .. })), "in an object stream");
+    let found: Vec<u32> = back.scan_objects_mentioning(b"ByteRange").map(|(r, _)| r.num).collect();
+    assert_eq!(found, vec![packed_one.num]);
+    // an unsaved object is always read
+    let edited = back.add(Object::Dict(marked));
+    let found: Vec<u32> = back.scan_objects_mentioning(b"ByteRange").map(|(r, _)| r.num).collect();
+    assert!(found.contains(&packed_one.num) && found.contains(&edited.num));
+    assert!(back.scan_objects_mentioning(b"NoSuchKey").all(|(r, _)| r == edited), "only the edited one");
+}
