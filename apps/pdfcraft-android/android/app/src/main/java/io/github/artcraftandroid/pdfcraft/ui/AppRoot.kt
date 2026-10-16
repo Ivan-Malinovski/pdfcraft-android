@@ -1,8 +1,9 @@
 package io.github.artcraftandroid.pdfcraft.ui
 
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -40,11 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.util.lerp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,20 +50,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.platform.LocalDensity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -84,6 +66,7 @@ import io.github.artcraftandroid.pdfcraft.ui.home.HomeRoot
 import io.github.artcraftandroid.pdfcraft.ui.home.SettingsScreen
 import io.github.artcraftandroid.pdfcraft.ui.viewer.SignaturePadScreen
 import io.github.artcraftandroid.pdfcraft.ui.viewer.ViewerScreen
+import kotlinx.coroutines.launch
 
 /** Home or the viewer, and everything that can come over them: tools, settings, dialogs, snackbars. */
 @Composable
@@ -100,35 +83,6 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         }
     }
     val doc = vm.document
-    // Reading Mode lays out text without a page canvas, so it has no page rectangle to target.
-    val openBounds = remember(doc) { if (doc != null && !vm.readingMode) vm.openThumbnailBounds else null }
-    val openProgress = remember(doc) { Animatable(if (openBounds != null) 0f else 1f) }
-    val openPath = vm.openThumbnailPath
-    var openImage by remember(openPath) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(openPath) {
-        if (openPath != null) openImage = withContext(Dispatchers.IO) { vm.thumbnails.of(openPath)?.asImageBitmap() }
-    }
-    LaunchedEffect(doc) {
-        if (doc != null) {
-            if (openBounds != null) {
-                val laidOut = kotlinx.coroutines.withTimeoutOrNull(1000) {
-                    snapshotFlow { doc.viewer.viewW }.first { it > 0f }
-                }
-                if (laidOut != null) {
-                    androidx.compose.runtime.withFrameNanos { }
-                    openProgress.animateTo(1f, tween(PdfMotion.OPEN_MS, easing = PdfMotion.OpenEasing))
-                } else openProgress.snapTo(1f)
-            }
-            vm.openThumbnailBounds = null
-            vm.openThumbnailPath = null
-        }
-    }
-    LaunchedEffect(vm.opening, doc) {
-        if (!vm.opening && doc == null) {
-            vm.openThumbnailBounds = null
-            vm.openThumbnailPath = null
-        }
-    }
     // outside the viewer (which sets its own) the bar icons follow the app's theme, not the system's
     val view = androidx.compose.ui.platform.LocalView.current
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
@@ -179,29 +133,17 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     }
     // what floats above Home or the viewer (sheets, the snackbar, the viewer's bars) frosts the screen below it
     val glass = rememberGlassSource()
-    var contentOrigin by remember { mutableStateOf(Offset.Zero) }
     androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
     // sideways, the camera cutout and the navigation bar sit at the sides: content stays between
     // them, on black, as the reference's does
     Box(
         Modifier.fillMaxSize().background(Color.Black)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .onGloballyPositioned { contentOrigin = it.positionInRoot() }
             .background(c.surface),
     ) {
-        if (doc == null || backProgress > 0f || (openBounds != null && openProgress.value < 1f)) {
-            Box(
-                Modifier.fillMaxSize()
-                    .graphicsLayer { alpha = if (doc == null || backProgress > 0f) 1f else ((0.8f - openProgress.value) / 0.35f).coerceIn(0f, 1f) }
-                    .then(if (doc == null) Modifier.glassSource(glass) else Modifier),
-            ) { HomeRoot(vm, onBrowse) }
-        }
-        if (doc != null) Box(
-            Modifier.fillMaxSize().graphicsLayer { alpha = if (openBounds == null) 1f else ((openProgress.value - OPEN_HANDOFF) / (1f - OPEN_HANDOFF)).coerceIn(0f, 1f) }.predictiveBack(backProgress, backExit, backEdge),
-        ) { ViewerScreen(vm, doc) }
-        if (doc != null && openBounds != null && openProgress.value < 1f && doc.viewer.viewW > 0f) {
-            val page = doc.viewer.currentPage
-            OpeningThumbnail(openBounds, doc.viewer.pageRectOnScreen(page), contentOrigin, openProgress.value, openImage)
+        when {
+            doc != null -> Box(Modifier.fillMaxSize().predictiveBack(backProgress, backExit, backEdge)) { ViewerScreen(vm, doc) }
+            else -> Box(Modifier.fillMaxSize().glassSource(glass)) { HomeRoot(vm, onBrowse) }
         }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
         if (doc == null) vm.fileSheet?.let { (r, recent) -> io.github.artcraftandroid.pdfcraft.ui.home.FileSheet(vm, r, recent) { vm.fileSheet = null } }
@@ -331,27 +273,4 @@ private fun Modifier.predictiveBack(progress: Float, exit: Float, edge: Int): Mo
     translationX = dir * progress * 16.dp.toPx()
     shape = androidx.compose.foundation.shape.RoundedCornerShape((28f * progress).dp)
     clip = true
-}
-
-/** How far the opening thumbnail has travelled when the real page starts to take over: only once it has all but settled. */
-private const val OPEN_HANDOFF = 0.96f
-
-/** Carry the file thumbnail into the visible page rectangle, then hand it to the canvas. */
-@Composable
-private fun OpeningThumbnail(start: androidx.compose.ui.geometry.Rect, end: androidx.compose.ui.geometry.Rect, origin: Offset, progress: Float, image: ImageBitmap?) {
-    val density = LocalDensity.current
-    val x = lerp(start.left - origin.x, end.left, progress)
-    val y = lerp(start.top - origin.y, end.top, progress)
-    val w = lerp(start.width, end.width, progress).coerceAtLeast(1f)
-    val h = lerp(start.height, end.height, progress).coerceAtLeast(1f)
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape((12f * (1f - progress)).dp)
-    Box(
-        Modifier.offset { IntOffset(x.toInt(), y.toInt()) }
-            .size(with(density) { w.toDp() }, with(density) { h.toDp() })
-            .graphicsLayer { alpha = ((1f - progress) / (1f - OPEN_HANDOFF)).coerceIn(0f, 1f) }
-            .clip(shape).background(Color.White),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
-    }
 }
