@@ -386,7 +386,7 @@ fun QuickToolbar(
                 contentAlignment = Alignment.TopCenter,
             ) {
                 // measured on the dark bar; the light bar's grey is our own match
-                val handle = if (c.dark) Color(0xFF6A6A6A) else Color(0xFFC4C4C4)
+                val handle = if (c.dark) Color(0xFFA6A6A6) else Color(0xFFC4C4C4)
                 Box(Modifier.padding(top = 15.dp).size(40.dp, 4.dp).background(handle, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
             }
             androidx.compose.animation.AnimatedVisibility(open && chips.isNotEmpty()) {
