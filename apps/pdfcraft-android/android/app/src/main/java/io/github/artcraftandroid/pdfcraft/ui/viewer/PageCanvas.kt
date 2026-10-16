@@ -71,6 +71,8 @@ fun PageCanvas(
     onLongPress: (Offset, PagePoint?) -> Unit = { _, _ -> },
     onDoubleTap: () -> Unit = {},
     onGestureStart: () -> Unit = {},
+    /** The reader scrolled the pages by this many pixels vertically (a finger drag or a fling; a pinch is not). */
+    onScroll: (Float) -> Unit = {},
     overlay: DrawScope.() -> Unit = {},
 ) {
     val density = LocalDensity.current
@@ -99,7 +101,8 @@ fun PageCanvas(
                         onDoubleTap()
                         flinger[0]?.cancel()
                         val from = state.zoom
-                        val to = if (from < 1.6f) 2.5f else 1f
+                        // zoomed out: back to fit-width; fit-width: in; zoomed in: back to fit-width
+                        val to = if (from < 0.99f) 1f else if (from < 1.6f) 2.5f else 1f
                         flinger[0] = scope.launch {
                             val anim = Animatable(from)
                             anim.animateTo(to, tween(DOUBLE_TAP_MS)) { state.zoomTo(value, p) }
@@ -144,7 +147,10 @@ fun PageCanvas(
                                 val c = event.calculateCentroid()
                                 if (zoomChange != 1f) state.zoomBy(zoomChange, c)
                             }
-                            if (pan != Offset.Zero) state.scrollBy(pan.x, pan.y)
+                            if (pan != Offset.Zero) {
+                                state.scrollBy(pan.x, pan.y)
+                                if (pressed.size == 1) onScroll(pan.y)
+                            }
                             event.changes.forEach { if (it.positionChanged()) it.consume() }
                         }
                         lastChange = pressed.first()
@@ -153,7 +159,7 @@ fun PageCanvas(
                     if (!started) return@awaitEachGesture
                     val v = tracker.calculateVelocity()
                     val velocity = if (pinched) Offset.Zero else Offset(v.x, v.y)
-                    flinger[0] = scope.launch { settle(state, velocity, density.density) }
+                    flinger[0] = scope.launch { settle(state, velocity, density.density, onScroll) }
                 }
             },
     ) {
@@ -168,7 +174,7 @@ fun PageCanvas(
 }
 
 /** After a gesture: fling (with decay), or in single-page mode come to rest on a page. */
-private suspend fun settle(state: ViewerState, velocity: Offset, density: Float) {
+private suspend fun settle(state: ViewerState, velocity: Offset, density: Float, onScroll: (Float) -> Unit) {
     if (state.mode == PageMode.SinglePage && state.zoom <= 1.01f) {
         val target = state.snapTarget(velocity.x)
         val anim = Animatable(state.scrollX)
@@ -182,6 +188,7 @@ private suspend fun settle(state: ViewerState, velocity: Offset, density: Float)
         val d = value - last
         last = value
         val left = state.scrollBy(d.x, d.y)
+        onScroll(d.y)
         // stop at the ends instead of decaying against them
         if (abs(left.x) > 0.5f && abs(left.y) > 0.5f) throw CancellationException("at the edge")
     }
@@ -194,7 +201,7 @@ private fun DrawScope.drawPages(state: ViewerState, images: PageImages, gen: Lon
         // a thin shadow line around the paper, as a printed page on a grey desk
         drawRect(look.pageShadow, topLeft = Offset(r.left - 1f, r.top - 1f), size = Size(r.width + 2f, r.height + 2f))
         drawRect(if (look.invert) Color.Black else Color.White, topLeft = r.topLeft, size = r.size)
-        val base = images.get(ImageKey(i, gen, 0)) ?: images.latestBase(i)
+        val base = images.get(ImageKey(i, gen, state.baseLevel())) ?: images.get(ImageKey(i, gen, 0)) ?: images.latestBase(i)
         if (base != null) drawImageIn(base, r, look.invert)
         if (level > 0) {
             val s = state.levelScale(i, level, maxScale)

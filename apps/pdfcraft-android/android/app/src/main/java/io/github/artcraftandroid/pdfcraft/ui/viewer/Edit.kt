@@ -123,7 +123,7 @@ fun EditToolbar(vm: AppViewModel, doc: OpenDocument) {
 private fun EditToolsBar(vm: AppViewModel, doc: OpenDocument) {
     Row(
         // taller when a large font setting enlarges the labels, rather than cutting them off
-        Modifier.fillMaxWidth().heightIn(min = BottomBarHeight).barTopLine().background(pdfColors.surface),
+        Modifier.fillMaxWidth().heightIn(min = BottomBarHeight).barTopLine(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -170,7 +170,7 @@ private fun EditFormatBar(vm: AppViewModel, doc: OpenDocument, para: Paragraph) 
     fun toggle(p: FormatPanel) {
         panel = if (panel == p) FormatPanel.None else p
     }
-    Column(Modifier.fillMaxWidth().background(c.surface)) {
+    Column(Modifier.fillMaxWidth()) {
         when (panel) {
             FormatPanel.Size -> SizePanel(para) { vm.styleParagraph(doc, para, mapOf("size" to it.toDouble())) }
             FormatPanel.Font -> FontPanel(vm.editFont[para.page to para.number]) { f ->

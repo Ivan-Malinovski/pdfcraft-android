@@ -446,11 +446,10 @@ fun BoxScope.ReadAloudBar(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
     val c = pdfColors
     var speeds by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(c.surface)) {
-        ProgressTrack(r.progress, Modifier.fillMaxWidth().height(6.dp))
-        Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.divider))
+    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape)) {
+        ProgressTrack(r.progress, Modifier.padding(horizontal = 26.dp).padding(top = 12.dp).fillMaxWidth().height(6.dp))
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp).height(56.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 20.dp, top = 12.dp, bottom = 12.dp).height(56.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -471,7 +470,6 @@ fun BoxScope.ReadAloudBar(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
             }
         }
         if (r.problem != null) Text(r.problem.orEmpty(), color = c.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
-        Box(Modifier.fillMaxWidth().windowInsetsBottomHeight(androidx.compose.foundation.layout.WindowInsets.navigationBars).background(c.navBand))
     }
     if (expanded) ReadAloudFull(vm, doc, r) { expanded = false }
 }
