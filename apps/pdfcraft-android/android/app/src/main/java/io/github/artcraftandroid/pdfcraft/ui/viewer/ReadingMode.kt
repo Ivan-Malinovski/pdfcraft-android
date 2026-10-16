@@ -51,7 +51,7 @@ import kotlinx.coroutines.isActive
  * (a tap hides them). Pinch or double tap changes the text size.
  */
 @Composable
-fun ReadingModeContent(vm: AppViewModel, doc: OpenDocument, top: Dp, bottom: Dp, onTap: () -> Unit, onScroll: (dy: Float, atTop: Boolean) -> Unit = { _, _ -> }) {
+fun ReadingModeContent(vm: AppViewModel, doc: OpenDocument, top: Dp, bottom: Dp, onTap: () -> Unit, onScroll: (dy: Float, atTop: Boolean) -> Unit = { _, _ -> }, modifier: Modifier = Modifier) {
     val c = pdfColors
     val night = doc.controller.nightMode
     val paper = if (night) Color(0xFF1E1E1E) else Color.White
@@ -95,7 +95,7 @@ fun ReadingModeContent(vm: AppViewModel, doc: OpenDocument, top: Dp, bottom: Dp,
             }
         }
     }
-    Box(Modifier.fillMaxSize().nestedScroll(scrollWatch)) {
+    Box(modifier.fillMaxSize().nestedScroll(scrollWatch)) {
         LazyColumn(
             state = list,
             modifier = Modifier.fillMaxSize().background(c.desk)
