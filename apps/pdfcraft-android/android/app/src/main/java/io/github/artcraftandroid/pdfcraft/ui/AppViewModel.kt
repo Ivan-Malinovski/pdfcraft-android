@@ -120,6 +120,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.IO) { recents.remove(setOf(uri.toString())) }
                 refreshRecents()
                 tell("This file has been moved or deleted.")
+            } catch (e: SecurityException) {
+                // A file another app lent for one visit (Files, Downloads: "Open with"): Android
+                // takes that access back later, so Recent can't read it again. PdfCraft's own copy
+                // opens instead, read-only (changes are offered as a copy, as for any file it
+                // can't write to); the original needs opening again from the app it's in.
+                val copy = withContext(Dispatchers.IO) { files.existingCopy(uri) }
+                if (copy != null) {
+                    openFile(eng, uri, copy, password)
+                    tell("Opened PdfCraft's copy. To change the original, open it again from the app it's in.")
+                } else {
+                    tell("PdfCraft can't open this file any more. Open it again from the app it's in, or with Open file.")
+                }
             } catch (e: Exception) {
                 tell(e.userMessage)
             } finally {
