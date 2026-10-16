@@ -87,23 +87,29 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     val view = LocalView.current
     val context = LocalContext.current
 
-    // The system bars go with the viewer's bars.
-    DisposableEffect(ctl.barsVisible) {
+    // The status bar stays hidden for as long as a document is open. Set up once: tying it to the bars
+    // (as the navigation bar is, below) re-showed the system bars each time they toggled, and the
+    // status bar flashed in as the pills came back.
+    DisposableEffect(Unit) {
         val window = (context as? Activity)?.window
         if (window != null) {
             val insets = WindowCompat.getInsetsController(window, view)
             insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // the status bar stays hidden in the viewer, and the document shows where it would be (no
-            // black band around the camera); the navigation bar comes and goes with the viewer's bars
+            // the document shows where the status bar would be (no black band around the camera)
             insets.hide(WindowInsetsCompat.Type.statusBars())
-            if (ctl.barsVisible) insets.show(WindowInsetsCompat.Type.navigationBars()) else insets.hide(WindowInsetsCompat.Type.navigationBars())
-            // the icons of a swiped-in status bar sit over the document's surround
-            insets.isAppearanceLightStatusBars = !c.dark
-            insets.isAppearanceLightNavigationBars = !c.dark
         }
         onDispose {
             if (window != null) WindowCompat.getInsetsController(window, view).show(WindowInsetsCompat.Type.systemBars())
         }
+    }
+    // The navigation bar comes and goes with the viewer's bars.
+    LaunchedEffect(ctl.barsVisible, c.dark) {
+        val window = (context as? Activity)?.window ?: return@LaunchedEffect
+        val insets = WindowCompat.getInsetsController(window, view)
+        if (ctl.barsVisible) insets.show(WindowInsetsCompat.Type.navigationBars()) else insets.hide(WindowInsetsCompat.Type.navigationBars())
+        // the icons of a swiped-in status bar sit over the document's surround
+        insets.isAppearanceLightStatusBars = !c.dark
+        insets.isAppearanceLightNavigationBars = !c.dark
     }
 
     // The pages start below the top bubble and leave room under the bottom one. The room is the same
