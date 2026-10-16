@@ -81,8 +81,8 @@ val FloatEdge = 8.dp
 val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
 
 /** The air inside the bottom bubble, so the end tools and the labels keep clear of its rounded corners. */
-val BubbleInsetX = 10.dp
-val BubbleInsetBottom = 8.dp
+val BubbleInsetX = 6.dp
+val BubbleInsetBottom = 10.dp
 
 /** The bubbles' corner radius: a capsule for a one-row bar. */
 val BubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp)
@@ -356,7 +356,7 @@ fun QuickToolbar(
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
         val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
         val shown = tools.take(slots)
-        val itemW = minOf(72.dp, (maxWidth - 16.dp) / maxOf(7, shown.size + 1))
+        val itemW = minOf(72.dp, (maxWidth - 4.dp) / maxOf(7, shown.size + 1))
         Column(
             Modifier.fillMaxWidth().pointerInput(chips.isNotEmpty()) {
                 if (chips.isEmpty()) return@pointerInput
