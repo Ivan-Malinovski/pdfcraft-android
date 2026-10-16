@@ -94,6 +94,10 @@ val FloatEdge = 8.dp
 /** The room the pages leave under the top bubble: its height, the gap above it and a little air. */
 val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
 
+/** The air inside the bottom bubble, so the end tools and the labels keep clear of its rounded corners. */
+val BubbleInsetX = 10.dp
+val BubbleInsetBottom = 8.dp
+
 /** The bubbles' corner radius: a capsule for a one-row bar. */
 val BubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp)
 
