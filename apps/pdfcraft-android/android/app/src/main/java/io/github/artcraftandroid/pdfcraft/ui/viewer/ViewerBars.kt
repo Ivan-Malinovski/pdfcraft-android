@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
@@ -38,6 +39,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -256,14 +258,16 @@ fun SearchBar(
 
 /**
  * An item of the bottom quick toolbar, laid out as the reference does: 5 dp down, the icon in a
- * 44 dp box (shaded while its tool is open), the 11 sp label straight under it, and a corner mark
- * when the tool has sub-tools.
+ * 44 dp box (shaded while its tool is open), the label straight under it, and a corner mark when
+ * the tool has sub-tools. As the reference's, the label follows the phone's font size setting: the
+ * item grows taller to hold it, and a long label wraps onto a second line (in a fixed height, a
+ * large font setting cut the labels off at the bottom).
  */
 @Composable
 private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, subTools: Boolean = false, selected: Boolean = false, width: Dp) {
     val c = pdfColors
     Column(
-        Modifier.width(width).height(BottomBarHeight).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label }
+        Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label }
             .padding(horizontal = 2.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -282,10 +286,11 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
             }
         }
         // the reference's 11 sp face is narrower than Inter: a half point less gives its height, and
-        // tighter letters its width; the label sits 2.5 dp nearer the icon than the box's edge
-        Text(
-            label, color = c.label, fontSize = 10.5.sp, letterSpacing = (-0.5).sp, maxLines = 1, overflow = TextOverflow.Clip, textAlign = TextAlign.Center,
-            modifier = Modifier.offset(y = (-2.5).dp),
+        // tighter letters its width; lines close together, so a wrapped label stays one block, and
+        // a word too wide for its slot (a very large font setting) shrinks rather than splits
+        io.github.artcraftandroid.pdfcraft.ui.WordWrapLabel(
+            label, c.label, size = 10.5.sp, lineHeight = 13.sp, letterSpacing = (-0.5).sp,
+            modifier = Modifier.padding(top = 2.5.dp),
         )
     }
 }
@@ -311,6 +316,8 @@ fun QuickToolbar(
     onMoreTools: () -> Unit,
     moreToolsOpen: Boolean,
     chips: List<QuickChip> = emptyList(),
+    /** How much taller than usual the tools' row is (a large font setting), in pixels. */
+    onExtraHeight: (Int) -> Unit = {},
 ) {
     val c = pdfColors
     var open by remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -345,7 +352,12 @@ fun QuickToolbar(
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                 ) { for (chip in chips) QuickChipView(chip) }
             }
-            Row(Modifier.fillMaxWidth().height(BottomBarHeight), horizontalArrangement = Arrangement.Center) {
+            val usual = with(androidx.compose.ui.platform.LocalDensity.current) { BottomBarHeight.roundToPx() }
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = BottomBarHeight)
+                    .onSizeChanged { onExtraHeight((it.height - usual).coerceAtLeast(0)) },
+                horizontalArrangement = Arrangement.Center,
+            ) {
                 for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = itemW)
                 QuickItem(LucideIcons.LayoutGrid, "More tools", onMoreTools, selected = moreToolsOpen, width = itemW)
             }
@@ -359,7 +371,7 @@ private fun QuickChipView(chip: QuickChip) {
     val c = pdfColors
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
     Row(
-        Modifier.height(37.dp).clip(shape).background(if (c.dark) Color(0xFF080808) else Color(0xFFEDEDED))
+        Modifier.heightIn(min = 37.dp).clip(shape).background(if (c.dark) Color(0xFF080808) else Color(0xFFEDEDED))
             .clickable(role = Role.Button, onClick = chip.onClick).padding(start = 7.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

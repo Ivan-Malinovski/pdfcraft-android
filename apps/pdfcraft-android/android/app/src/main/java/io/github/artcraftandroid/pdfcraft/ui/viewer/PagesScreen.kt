@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -247,7 +248,8 @@ fun PagesScreen(vm: AppViewModel, doc: OpenDocument, onClose: () -> Unit) {
         }
         val enabled = picked.isNotEmpty()
         Row(
-            Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine().background(c.surface),
+            // at least the bar's height, taller when a large font setting enlarges the labels (sp, as the reference's)
+            Modifier.fillMaxWidth().heightIn(min = BottomBarHeight).barTopLine().background(c.surface),
             horizontalArrangement = Arrangement.spacedBy(if (organizing) 0.dp else 20.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -321,7 +323,7 @@ private fun OrganizeItem(icon: ImageVector, label: String, enabled: Boolean, onC
     val tint = if (enabled) c.icon else c.icon.copy(alpha = 0.35f)
     // the reference's items: a 40 dp icon box over an 11 sp label, 56 dp wide (wider for long labels)
     Column(
-        Modifier.widthIn(min = 56.dp).height(BottomBarHeight).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        Modifier.widthIn(min = 56.dp).heightIn(min = BottomBarHeight).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label }.padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

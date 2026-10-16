@@ -289,7 +289,7 @@ private fun CarouselTile(icon: ImageVector, label: String, hue: Color, onClick: 
             Icon(icon, null, tint = hue, modifier = Modifier.size(32.dp))
         }
         Spacer(Modifier.height(8.dp))
-        Text(label, color = c.text, fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 2, lineHeight = 14.sp, overflow = TextOverflow.Ellipsis)
+        io.github.artcraftandroid.pdfcraft.ui.WordWrapLabel(label, c.text, size = 11.sp, lineHeight = 14.sp)
     }
 }
 

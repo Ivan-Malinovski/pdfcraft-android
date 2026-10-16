@@ -28,6 +28,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -106,9 +107,11 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     val statusPx = maxOf(WindowInsets.statusBars.getTop(density), WindowInsets.displayCutout.getTop(density)).toFloat()
     val navPx = WindowInsets.navigationBars.getBottom(density).toFloat()
     val topPx = with(density) { TopBarHeight.toPx() }
-    val bottomPx = with(density) { (if (ctl.tool == ViewerTool.None) QuickBarHeight else BottomBarHeight).toPx() }
+    // the quick toolbar grows with a large font setting: the page area leaves room for that too
+    var quickExtraPx by remember { mutableIntStateOf(0) }
+    val bottomPx = with(density) { if (ctl.tool == ViewerTool.None) QuickBarHeight.toPx() + quickExtraPx else BottomBarHeight.toPx() }
     // keyed on the document too: one opened over another (Create, Combine) has a fresh page view
-    LaunchedEffect(doc, ctl.barsVisible, statusPx, navPx, ctl.searching, ctl.tool, vm.readingMode) {
+    LaunchedEffect(doc, ctl.barsVisible, statusPx, navPx, ctl.searching, ctl.tool, vm.readingMode, bottomPx) {
         val bottomShown = ctl.barsVisible && !ctl.searching && !vm.readingMode
         doc.viewer.setPadding(
             top = if (ctl.barsVisible) statusPx + topPx else statusPx,
@@ -362,6 +365,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                                 QuickChip("Create PDF", QuickTool.Create.icon, ToolHues.create) { vm.runQuickTool(doc, QuickTool.Create) },
                                 QuickChip("Organize pages", QuickTool.Organize.icon, ToolHues.organize) { vm.runQuickTool(doc, QuickTool.Organize) },
                             ),
+                            onExtraHeight = { quickExtraPx = it },
                         )
                     } else {
                         ToolSubToolbar(vm, doc)

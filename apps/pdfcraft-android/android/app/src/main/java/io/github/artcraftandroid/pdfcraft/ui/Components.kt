@@ -473,3 +473,40 @@ fun PdfField(
         else Spacer(Modifier.width(12.dp))
     }
 }
+
+/**
+ * A short label under an icon (toolbars, tool tiles), centred, on up to [maxLines] lines that
+ * break only between words. A word too wide for the room (a large font size setting) makes the
+ * whole label a little smaller, down to [minSize], rather than being split: "Organize pages"
+ * read "Organi / ze pa…" at the largest setting.
+ */
+@Composable
+fun WordWrapLabel(
+    text: String,
+    color: Color,
+    size: androidx.compose.ui.unit.TextUnit,
+    lineHeight: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+    maxLines: Int = 2,
+    letterSpacing: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    minSize: androidx.compose.ui.unit.TextUnit = 7.sp,
+) {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val style = androidx.compose.material3.LocalTextStyle.current.merge(
+        androidx.compose.ui.text.TextStyle(
+            color = color, fontSize = size, lineHeight = lineHeight, letterSpacing = letterSpacing,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        ),
+    )
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
+        val room = constraints.maxWidth
+        val scale = remember(text, style, room) {
+            val widest = text.split(' ').filter { it.isNotBlank() }
+                .maxOfOrNull { measurer.measure(it, style, softWrap = false, maxLines = 1).size.width } ?: 0
+            // a little under the exact ratio, so the narrowed word doesn't land a pixel too wide
+            if (room == androidx.compose.ui.unit.Constraints.Infinity || widest <= room || widest == 0) 1f
+            else (room.toFloat() / widest * 0.97f).coerceAtLeast(minSize.value / size.value)
+        }
+        Text(text, style = style.copy(fontSize = size * scale, lineHeight = lineHeight * scale), maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    }
+}
