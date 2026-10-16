@@ -1,6 +1,8 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
+import io.github.artcraftandroid.pdfcraft.ui.GLASS_PANEL_ALPHA
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,7 +45,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -446,7 +447,7 @@ private fun BoxScope.SelectedParagraph(vm: AppViewModel, doc: OpenDocument, para
     }
 }
 
-/** The dark menu the reference floats over a selection: centred above it, or below when there's no room. */
+/** The menu floats above a selection, or below when there is no room. */
 @Composable
 private fun BoxScope.FloatingMenu(a: Offset, b: Offset, top: Float, content: @Composable () -> Unit) {
     val density = LocalDensity.current
@@ -457,7 +458,7 @@ private fun BoxScope.FloatingMenu(a: Offset, b: Offset, top: Float, content: @Co
     val y = if (above > top) above else b.y + gap
     Row(
         Modifier.offset { IntOffset(x.roundToInt(), y.roundToInt()) }.onSizeChanged { menu = it }
-            .shadow(6.dp, PdfShapes.Small).background(Color(0xFF303030), PdfShapes.Small).height(48.dp),
+            .floatingSurface(PdfShapes.Small, alpha = GLASS_PANEL_ALPHA).height(48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) { content() }
 }
@@ -465,20 +466,20 @@ private fun BoxScope.FloatingMenu(a: Offset, b: Offset, top: Float, content: @Co
 @Composable
 private fun MenuText(label: String, onClick: () -> Unit) {
     Box(Modifier.fillMaxHeightRow().clickable(onClick = onClick).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-        Text(label, color = Color.White, fontSize = 15.sp)
+        Text(label, color = pdfColors.text, fontSize = 15.sp)
     }
 }
 
 @Composable
 private fun MenuIconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Box(Modifier.size(48.dp).clickable(onClick = onClick).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
+        Icon(icon, null, tint = pdfColors.text, modifier = Modifier.size(24.dp))
     }
 }
 
 @Composable
 private fun MenuSplit() {
-    Box(Modifier.width(1.dp).height(48.dp).background(Color(0xFF4B4B4B)))
+    Box(Modifier.width(1.dp).height(48.dp).background(pdfColors.divider))
 }
 
 private fun Modifier.fillMaxHeightRow(): Modifier = this.height(48.dp)
