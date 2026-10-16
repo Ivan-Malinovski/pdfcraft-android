@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -65,7 +66,10 @@ fun ScrubPreview(vm: AppViewModel, doc: OpenDocument, page: Int, modifier: Modif
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(w, h).clip(PdfShapes.Thumb).background(Color.White), contentAlignment = Alignment.Center) {
-            shown?.second?.let { Image(it, null, Modifier.size(w, h), contentScale = ContentScale.Fit) }
+            shown?.let { (shownPage, img) ->
+                // the last picture stays until the new page's arrives, dimmed so it isn't taken for it
+                Image(img, null, Modifier.size(w, h).alpha(if (shownPage == page) 1f else 0.35f), contentScale = ContentScale.Fit)
+            }
         }
         Text("${page + 1}", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp))
     }
