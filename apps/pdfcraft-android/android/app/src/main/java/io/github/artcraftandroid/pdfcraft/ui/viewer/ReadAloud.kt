@@ -1,5 +1,9 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.FloatSide
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import android.content.Context
 import android.content.Intent
 import android.speech.tts.TextToSpeech
@@ -446,7 +450,7 @@ fun BoxScope.ReadAloudBar(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
     val c = pdfColors
     var speeds by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape)) {
+    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Bubble)) {
         ProgressTrack(r.progress, Modifier.padding(horizontal = 26.dp).padding(top = 12.dp).fillMaxWidth().height(6.dp))
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 20.dp, top = 12.dp, bottom = 12.dp).height(56.dp),
@@ -516,7 +520,7 @@ private fun SpeedPicker(r: ReadAloud, onDismiss: () -> Unit) {
         Box(Modifier.fillMaxSize().background(c.scrim).pointerInput(Unit) { detectTapGestures { onDismiss() } }) {
             Column(
                 Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 24.dp, bottom = 76.dp).width(200.dp)
-                    .shadow(2.dp, RoundedCornerShape(8.dp)).background(c.surface, RoundedCornerShape(8.dp)).padding(vertical = 12.dp),
+                    .shadow(2.dp, PdfShapes.Medium).background(c.surface, PdfShapes.Medium).padding(vertical = 12.dp),
             ) {
                 for (s in ReadAloud.SPEEDS) {
                     Row(
@@ -562,7 +566,7 @@ private fun ReadAloudFull(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
                 ) { Icon(LucideIcons.ChevronDown, null, tint = c.label, modifier = Modifier.size(22.dp)) }
             }
             Spacer(Modifier.weight(1f))
-            Box(Modifier.heightIn(max = 240.dp).widthIn(max = 240.dp).shadow(4.dp, RoundedCornerShape(8.dp)).background(Color.White, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
+            Box(Modifier.heightIn(max = 240.dp).widthIn(max = 240.dp).shadow(4.dp, PdfShapes.Medium).background(Color.White, PdfShapes.Medium).clip(PdfShapes.Medium)) {
                 thumb?.let { Image(it, null, contentScale = ContentScale.Fit, modifier = Modifier.heightIn(max = 240.dp)) }
             }
             Spacer(Modifier.height(24.dp))

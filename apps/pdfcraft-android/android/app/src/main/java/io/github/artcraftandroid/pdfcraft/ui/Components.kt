@@ -3,10 +3,12 @@ package io.github.artcraftandroid.pdfcraft.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -37,7 +39,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Arrangement
@@ -90,7 +92,18 @@ import kotlinx.coroutines.launch
 object PdfMotion {
     const val SHEET_IN_MS = 250
     const val SHEET_OUT_MS = 200
-    const val BARS_MS = 300
+    const val BARS_FADE_MS = 220
+
+    /** Bars and sheets move on springs: they carry the speed of a gesture and settle without a fixed duration. */
+    fun <T> barsIn(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)
+    fun <T> barsOut(): FiniteAnimationSpec<T> = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+    fun <T> sheetIn(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)
+
+    /** The settle of a dragged sheet that was let go short of closing. */
+    fun <T> snapBack(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium)
+
+    /** Zoom easing in or out (a double tap, the fit back). */
+    fun <T> zoom(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.9f, stiffness = 380f)
 }
 
 /** An icon button of the bars: a 46 dp target with a 24 dp icon, a pressed background when [selected]. */
@@ -109,7 +122,7 @@ fun BarIcon(
     Box(
         modifier
             .size(size)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(PdfShapes.Small)
             .background(if (selected) pdfColors.pressed else Color.Transparent)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
@@ -174,7 +187,19 @@ fun PdfSheet(
     val own = remember { MutableTransitionState(false) }
     LaunchedEffect(own) { own.targetState = true }
     val visible = LocalSheetVisible.current ?: own
-    BackHandler(enabled = visible.targetState, onBack = onDismiss)
+    // the back gesture shrinks the sheet toward the bottom edge as it is made; a cancelled one lets it spring back
+    var back by remember { mutableFloatStateOf(0f) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = visible.targetState) { events ->
+        try {
+            events.collect { back = it.progress }
+            onDismiss()
+        } finally {
+            // on commit the sheet is closing anyway: reset once it has gone
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                animate(back, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> back = v }
+            }
+        }
+    }
     val scope = rememberCoroutineScope()
     var drag by remember { mutableFloatStateOf(0f) }
     var height by remember { mutableIntStateOf(0) }
@@ -189,25 +214,32 @@ fun PdfSheet(
             )
         }
         val density = LocalDensity.current
-        val divider = pdfColors.divider
-        val navBand = pdfColors.navBand
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
             val navBar = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
-            val maxH = minOf(if (aboveNavBar) maxHeight * maxHeightFraction + navBar else maxHeight * maxHeightFraction, maxHeight - topReserve)
+            // the sheet floats: FloatEdge above the screen's bottom (above the navigation bar, when it clears it)
+            val lift = FloatEdge + if (bottomBand) navBar else 0.dp
+            val maxH = minOf(if (aboveNavBar) maxHeight * maxHeightFraction + navBar else maxHeight * maxHeightFraction, maxHeight - topReserve) - lift
             AnimatedVisibility(
                 visible,
                 modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(tween(PdfMotion.SHEET_IN_MS, easing = LinearOutSlowInEasing)) { it },
+                enter = slideInVertically(PdfMotion.sheetIn()) { it },
                 exit = slideOutVertically(tween(PdfMotion.SHEET_OUT_MS, easing = FastOutLinearInEasing)) { it },
             ) {
                 Column(
                     modifier
                         .fillMaxWidth()
+                        .then(if (bottomBand) Modifier.navigationBarsPadding() else Modifier)
+                        .padding(start = FloatSide, end = FloatSide, bottom = FloatEdge)
                         .heightIn(max = maxH)
                         .offset { IntOffset(0, drag.roundToInt()) }
                         .onSizeChanged { height = it.height }
-                        .background(background ?: pdfColors.surface)
-                        .drawBehind { drawRect(divider, size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx())) }
+                        .graphicsLayer {
+                            val k = 1f - 0.08f * back
+                            scaleX = k
+                            scaleY = k
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        }
+                        .floatingSurface(PdfShapes.Large, tint = background ?: pdfColors.surface, alpha = GLASS_PANEL_ALPHA)
                         .pointerInput(Unit) { detectTapGestures() },
                 ) {
                     // the handle: drag it (or the sheet's top) down to close
@@ -222,7 +254,7 @@ fun PdfSheet(
                                             if (drag > height / 4f) {
                                                 onDismiss()
                                             }
-                                            animate(drag, 0f, animationSpec = tween(150)) { v, _ -> drag = v }
+                                            animate(drag, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> drag = v }
                                         }
                                     },
                                     onVerticalDrag = { _, dy -> drag = (drag + dy).coerceAtLeast(0f) },
@@ -234,11 +266,8 @@ fun PdfSheet(
                         Box(Modifier.padding(top = if (handleHeight < 24.dp) 8.dp else 0.dp).width(42.dp).height(4.dp).clip(CircleShape).background(pdfColors.handle))
                     }
                     Column(Modifier.weight(1f, fill = fill)) { content() }
-                    // the band behind the navigation buttons, in the viewer's colour
-                    if (bottomBand) Box(Modifier.fillMaxWidth().windowInsetsBottomHeight(WindowInsets.navigationBars).background(navBand))
                 }
             }
-            with(density) { Unit }
         }
     }
 }
@@ -338,6 +367,7 @@ fun BoxScope.HintToast(text: String?, modifier: Modifier = Modifier, alignment: 
 @Composable
 fun PdfSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val c = pdfColors
+    val haptics = rememberHaptics()
     val track = if (checked) c.accent else if (c.dark) Color(0xFF959595) else Color(0xFFB0B0B0)
     Box(
         modifier
@@ -345,7 +375,7 @@ fun PdfSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier 
             .clip(CircleShape)
             .background(if (checked) track else Color.Transparent)
             .then(if (checked) Modifier else Modifier.background(Color.Transparent))
-            .clickable(role = Role.Switch) { onChange(!checked) },
+            .clickable(role = Role.Switch) { haptics.toggle(!checked); onChange(!checked) },
     ) {
         if (!checked) {
             Box(Modifier.fillMaxSize().clip(CircleShape).background(track.copy(alpha = 0.0f)))
@@ -401,7 +431,7 @@ fun PdfDialog(
         androidx.compose.runtime.SideEffect { window?.setDimAmount(0.6f) }
         Box(Modifier.fillMaxWidth().padding(horizontal = if (list) 68.dp else 51.dp), contentAlignment = Alignment.Center) {
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(if (list) (if (c.dark) Color(0xFF424242) else Color.White) else c.surface)
+                Modifier.fillMaxWidth().clip(PdfShapes.Large).background(if (list) (if (c.dark) Color(0xFF424242) else Color.White) else c.surface)
                     .padding(if (list) PaddingValues(vertical = 8.dp) else PaddingValues(24.dp)),
             ) {
                 if (title != null) {
@@ -426,8 +456,8 @@ private fun DialogPill(label: String, filled: Boolean, enabled: Boolean, red: Bo
     val c = pdfColors
     val fill = if (red) c.red else Color(0xFF1473E6)
     Box(
-        Modifier.heightIn(min = 42.dp).widthIn(min = 88.dp).clip(RoundedCornerShape(21.dp))
-            .then(if (filled) Modifier.background(if (enabled) fill else c.pressed) else Modifier.border(2.dp, c.textSecondary, RoundedCornerShape(21.dp)))
+        Modifier.heightIn(min = 42.dp).widthIn(min = 88.dp).clip(PdfShapes.Pill)
+            .then(if (filled) Modifier.background(if (enabled) fill else c.pressed) else Modifier.border(2.dp, c.textSecondary, PdfShapes.Pill))
             .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -452,8 +482,8 @@ fun PdfField(
     var focused by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     Row(
-        modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(4.dp))
-            .border(if (focused || error) 2.dp else 1.dp, if (error) c.red else if (focused) Color(0xFF378EF0) else c.textSecondary, RoundedCornerShape(4.dp))
+        modifier.fillMaxWidth().height(48.dp).clip(PdfShapes.Small)
+            .border(if (focused || error) 2.dp else 1.dp, if (error) c.red else if (focused) Color(0xFF378EF0) else c.textSecondary, PdfShapes.Small)
             .padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -508,5 +538,25 @@ fun WordWrapLabel(
             else (room.toFloat() / widest * 0.97f).coerceAtLeast(minSize.value / size.value)
         }
         Text(text, style = style.copy(fontSize = size * scale, lineHeight = lineHeight * scale), maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** A snackbar as a floating glass pill: the message, then its action (and a close button when it has no action). */
+@Composable
+fun GlassSnackbar(data: androidx.compose.material3.SnackbarData) {
+    val c = pdfColors
+    val v = data.visuals
+    Row(
+        Modifier.fillMaxWidth().floatingSurface(PdfShapes.Bubble, alpha = GLASS_PANEL_ALPHA).padding(start = 20.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(v.message, color = c.text, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(vertical = 14.dp))
+        v.actionLabel?.let { label ->
+            Text(
+                label, color = c.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(PdfShapes.Pill).clickable(onClick = data::performAction).padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
+        if (v.withDismissAction) BarIcon(LucideIcons.X, "Dismiss", data::dismiss, size = 40.dp, iconSize = 18.dp)
     }
 }

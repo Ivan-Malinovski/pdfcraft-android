@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.home
 
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import io.github.artcraftandroid.pdfcraft.ui.safeTopPadding
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -51,6 +52,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -285,7 +289,7 @@ private fun CarouselTile(icon: ImageVector, label: String, hue: Color, onClick: 
     val c = pdfColors
     // 64 dp tiles 16 dp apart, the tool's hue faint behind its icon, an 11 sp name under it
     Column(Modifier.width(64.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp).semantics { contentDescription = label }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(64.dp).clip(RoundedCornerShape(5.dp)).background(tint(hue, c.dark)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(64.dp).clip(PdfShapes.Small).background(tint(hue, c.dark)), contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = hue, modifier = Modifier.size(32.dp))
         }
         Spacer(Modifier.height(8.dp))
@@ -336,7 +340,7 @@ fun FileThumb(vm: AppViewModel, path: String?, width: Int, height: Int) {
         if (path != null) img = withContext(Dispatchers.IO) { vm.thumbnails.of(path)?.asImageBitmap() }
     }
     val c = pdfColors
-    Box(Modifier.size(width.dp, height.dp).clip(RoundedCornerShape(4.dp)).background(if (img != null) Color.White else c.surfaceRaised).border(1.dp, c.divider, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(width.dp, height.dp).clip(PdfShapes.Thumb).background(if (img != null) Color.White else c.surfaceRaised).border(1.dp, c.divider, PdfShapes.Thumb), contentAlignment = Alignment.Center) {
         val i = img
         if (i != null) Image(i, null, modifier = Modifier.size(width.dp, height.dp), contentScale = ContentScale.Crop) else PdfBadge((width * 0.55f).toInt())
     }
@@ -348,15 +352,16 @@ fun FileListRow(vm: AppViewModel, r: FileRow, recent: Boolean = false) {
     val c = pdfColors
     val selecting = vm.selectedFiles.isNotEmpty()
     val ticked = r.key in vm.selectedFiles
+    var thumbBounds by remember(r.key) { mutableStateOf<Rect?>(null) }
     // a long press ticks the file (several can then be shared, combined or deleted together)
     Row(
         Modifier.fillMaxWidth()
             .background(if (ticked) c.toolAccent.copy(alpha = 0.12f) else Color.Transparent)
-            .combinedClickable(onClick = { if (selecting) vm.toggleSelected(r) else r.open() }, onLongClick = { vm.toggleSelected(r) })
+            .combinedClickable(onClick = { if (selecting) vm.toggleSelected(r) else { vm.openThumbnailBounds = thumbBounds; r.open() } }, onLongClick = { vm.toggleSelected(r) })
             .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) { FileThumb(vm, r.thumbPath, 36, 42) }
+        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) { Box(Modifier.onGloballyPositioned { thumbBounds = it.boundsInRoot() }) { FileThumb(vm, r.thumbPath, 36, 42) } }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -417,8 +422,9 @@ private fun SelectionBar(vm: AppViewModel, recent: Boolean, onDelete: () -> Unit
 @Composable
 private fun FileGridCell(vm: AppViewModel, r: FileRow, modifier: Modifier, recent: Boolean) {
     val c = pdfColors
-    Column(modifier.clickable(onClick = r.open).padding(vertical = 8.dp)) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 160.dp), contentAlignment = Alignment.Center) { FileThumb(vm, r.thumbPath, 120, 156) }
+    var thumbBounds by remember(r.key) { mutableStateOf<Rect?>(null) }
+    Column(modifier.clickable { vm.openThumbnailBounds = thumbBounds; r.open() }.padding(vertical = 8.dp)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 160.dp), contentAlignment = Alignment.Center) { Box(Modifier.onGloballyPositioned { thumbBounds = it.boundsInRoot() }) { FileThumb(vm, r.thumbPath, 120, 156) } }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
                 Text(r.name.removeSuffix(".pdf"), color = c.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

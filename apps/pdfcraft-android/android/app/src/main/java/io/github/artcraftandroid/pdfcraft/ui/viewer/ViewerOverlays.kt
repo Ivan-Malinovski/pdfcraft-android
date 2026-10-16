@@ -1,5 +1,9 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import io.github.artcraftandroid.pdfcraft.ui.GLASS_PANEL_ALPHA
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -86,27 +90,35 @@ class ReplyPrompt(val doc: OpenDocument, val comment: CommentInfo)
  * and can be dragged to move through the document; a tap opens Go to page.
  */
 @Composable
-fun BoxScope.Scrubber(doc: OpenDocument, visible: Boolean, top: Dp, bottom: Dp, onDrag: () -> Unit, onTap: () -> Unit) {
+fun BoxScope.Scrubber(vm: AppViewModel, doc: OpenDocument, visible: Boolean, top: Dp, bottom: Dp, onDrag: () -> Unit, onTap: () -> Unit) {
     val c = pdfColors
     val v = doc.viewer
     val density = LocalDensity.current
     var dragging by remember { mutableStateOf(false) }
     AnimatedVisibility(visible || dragging, modifier = Modifier.align(Alignment.TopEnd), enter = fadeIn(tween(150)), exit = fadeOut(tween(300))) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(top = top + 8.dp, bottom = bottom + 8.dp)) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(top = top + 8.dp, bottom = bottom + 8.dp, end = FloatEdge)) {
             val track = with(density) { maxHeight.toPx() }
-            val pillH = with(density) { 32.dp.toPx() }
+            val pillH = with(density) { 34.dp.toPx() }
             val maxScroll = (v.layout.height * v.zoom - v.viewH).coerceAtLeast(1f)
             val fraction = (v.scrollY / maxScroll).coerceIn(0f, 1f)
             val y = fraction * (track - pillH)
             val label = "${v.currentPage + 1}"
+            if (dragging) {
+                // the page under the thumb, beside it (kept inside the track)
+                val cardH = with(density) { 168.dp.toPx() }
+                val cy = (y + pillH / 2f - cardH / 2f).coerceIn(0f, (track - cardH).coerceAtLeast(0f))
+                ScrubPreview(
+                    vm, doc, v.currentPage,
+                    Modifier.align(Alignment.TopEnd).padding(end = 52.dp).offset { IntOffset(0, cy.roundToInt()) },
+                )
+            }
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .offset { IntOffset(0, y.roundToInt()) }
-                    .height(32.dp)
-                    .widthIn(min = if (label.length >= 3) 52.dp else 40.dp)
-                    .shadow(2.dp, RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
-                    .background(c.surface, RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
+                    .height(34.dp)
+                    .widthIn(min = if (label.length >= 3) 52.dp else 44.dp)
+                    .floatingSurface(PdfShapes.Pill)
                     .pointerInput(doc) {
                         detectTapGestures(onTap = { onTap() })
                     }
@@ -125,7 +137,7 @@ fun BoxScope.Scrubber(doc: OpenDocument, visible: Boolean, top: Dp, bottom: Dp, 
                     .semantics { contentDescription = "Page ${v.currentPage + 1} of ${doc.pageCount}" },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = c.text, fontSize = 15.sp, modifier = Modifier.padding(start = 12.dp, end = 10.dp))
+                Text(label, color = c.text, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 12.dp))
             }
         }
     }
@@ -207,8 +219,7 @@ fun BoxScope.SelectionMenu(vm: AppViewModel, doc: OpenDocument, sel: Selection) 
             .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
             .onSizeChanged { menuSize = it }
             .width(209.dp)
-            .shadow(6.dp, RoundedCornerShape(4.dp))
-            .background(c.menu, RoundedCornerShape(4.dp)),
+            .floatingSurface(PdfShapes.Medium, tint = c.menu, alpha = GLASS_PANEL_ALPHA),
     ) {
         Row(Modifier.fillMaxWidth().height(61.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             MenuIcon(LucideIcons.MessageSquarePlus, "Add comment", allowed) { vm.notePrompt = NotePrompt(doc, null, sel) }
@@ -420,25 +431,33 @@ fun BoxScope.SelectionHandles(doc: OpenDocument, sel: Selection) {
 
 /** Single page mode's scrubber: a pill with the page number along the bottom; drag to go through the pages. */
 @Composable
-fun BoxScope.HorizontalScrubber(doc: OpenDocument, visible: Boolean, bottom: Dp, onDrag: () -> Unit, onTap: () -> Unit) {
+fun BoxScope.HorizontalScrubber(vm: AppViewModel, doc: OpenDocument, visible: Boolean, bottom: Dp, onDrag: () -> Unit, onTap: () -> Unit) {
     val c = pdfColors
     val v = doc.viewer
     val density = LocalDensity.current
     var dragging by remember { mutableStateOf(false) }
     var dragX by remember { mutableFloatStateOf(0f) }
     AnimatedVisibility(visible || dragging, modifier = Modifier.align(Alignment.BottomCenter), enter = fadeIn(tween(150)), exit = fadeOut(tween(300))) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = bottom + 12.dp).height(32.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = bottom + 12.dp).height(34.dp)) {
             val track = with(density) { maxWidth.toPx() }
-            val pillW = with(density) { 48.dp.toPx() }
+            val pillW = with(density) { 52.dp.toPx() }
             val n = (doc.pageCount - 1).coerceAtLeast(1)
             val x = if (dragging) dragX else v.currentPage.toFloat() / n * (track - pillW)
-            Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(2.dp).background(c.divider))
+            if (dragging) {
+                // the page under the thumb, above it (kept inside the screen)
+                val cardW = with(density) { 100.dp.toPx() }
+                val cx = (x + pillW / 2f - cardW / 2f).coerceIn(-with(density) { 12.dp.toPx() }, track - cardW + with(density) { 12.dp.toPx() })
+                ScrubPreview(
+                    vm, doc, v.currentPage,
+                    Modifier.align(Alignment.TopStart).offset { IntOffset(cx.roundToInt(), 0) }.offset(y = (-176).dp),
+                )
+            }
+            Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(2.dp).clip(PdfShapes.Pill).background(c.divider))
             Box(
                 Modifier
                     .offset { IntOffset(x.roundToInt(), 0) }
-                    .size(48.dp, 30.dp)
-                    .shadow(2.dp, RoundedCornerShape(15.dp))
-                    .background(c.surface, RoundedCornerShape(15.dp))
+                    .size(52.dp, 34.dp)
+                    .floatingSurface(PdfShapes.Pill)
                     .pointerInput(doc) { detectTapGestures(onTap = { onTap() }) }
                     .pointerInput(doc) {
                         detectDragGestures(

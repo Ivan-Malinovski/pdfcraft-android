@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -456,7 +457,7 @@ private fun BoxScope.FloatingMenu(a: Offset, b: Offset, top: Float, content: @Co
     val y = if (above > top) above else b.y + gap
     Row(
         Modifier.offset { IntOffset(x.roundToInt(), y.roundToInt()) }.onSizeChanged { menu = it }
-            .shadow(6.dp, RoundedCornerShape(4.dp)).background(Color(0xFF303030), RoundedCornerShape(4.dp)).height(48.dp),
+            .shadow(6.dp, PdfShapes.Small).background(Color(0xFF303030), PdfShapes.Small).height(48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) { content() }
 }
@@ -561,7 +562,7 @@ private fun BoxScope.InlineEditor(vm: AppViewModel, doc: OpenDocument, para: Par
         if (typo != null) {
             Row(
                 Modifier.offset { IntOffset(a.x.roundToInt(), (a.y - 48.dp.toPx()).roundToInt()) }
-                    .background(Color(0xFF2C2C2C), androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = 4.dp),
+                    .background(Color(0xFF2C2C2C), PdfShapes.Small).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 for (word in typo.suggestions) {

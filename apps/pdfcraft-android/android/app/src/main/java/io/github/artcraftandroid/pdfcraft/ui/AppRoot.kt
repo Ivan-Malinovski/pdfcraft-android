@@ -35,6 +35,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.util.lerp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +82,15 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         }
     }
     val doc = vm.document
+    val openBounds = remember(doc) { if (doc != null) vm.openThumbnailBounds else null }
+    val openProgress = remember(doc) { Animatable(if (openBounds != null) 0f else 1f) }
+    LaunchedEffect(doc) {
+        if (doc != null && openBounds != null) {
+            openProgress.animateTo(1f, tween(durationMillis = 340))
+            vm.openThumbnailBounds = null
+        }
+    }
+    LaunchedEffect(vm.opening, doc) { if (!vm.opening && doc == null) vm.openThumbnailBounds = null }
     // outside the viewer (which sets its own) the bar icons follow the app's theme, not the system's
     val view = androidx.compose.ui.platform.LocalView.current
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
@@ -88,7 +103,25 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         }
     }
     // Back in the viewer closes the document (saving it) and returns to Home
-    androidx.activity.compose.BackHandler(enabled = doc != null && vm.toolScreen == null) { vm.closeDocument() }
+    // (predictive: the page shrinks into a card as the gesture is made, and springs back if it is let go)
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    var backEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = doc != null && vm.toolScreen == null) { events ->
+        try {
+            events.collect { backProgress = it.progress; backEdge = it.swipeEdge }
+            androidx.compose.animation.core.animate(backProgress, 1f, animationSpec = androidx.compose.animation.core.tween(120)) { v, _ -> backProgress = v }
+            vm.closeDocument()
+            backProgress = 0f
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                androidx.compose.animation.core.animate(backProgress, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backProgress = v }
+            }
+            throw e
+        }
+    }
+    // what floats above Home or the viewer (sheets, the snackbar, the viewer's bars) frosts the screen below it
+    val glass = rememberGlassSource()
+    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
     // sideways, the camera cutout and the navigation bar sit at the sides: content stays between
     // them, on black, as the reference's does
     Box(
@@ -96,10 +129,12 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .background(c.surface),
     ) {
-        when {
-            doc != null -> ViewerScreen(vm, doc)
-            else -> HomeRoot(vm, onBrowse)
+        if (doc == null || (openBounds != null && openProgress.value < 1f)) {
+            Box(Modifier.fillMaxSize().then(if (doc == null) Modifier.glassSource(glass) else Modifier)) { HomeRoot(vm, onBrowse) }
         }
+        if (doc != null) Box(
+            Modifier.fillMaxSize().openFrom(openBounds, openProgress.value).predictiveBack(backProgress, backEdge),
+        ) { ViewerScreen(vm, doc) }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
         if (doc == null) vm.fileSheet?.let { (r, recent) -> io.github.artcraftandroid.pdfcraft.ui.home.FileSheet(vm, r, recent) { vm.fileSheet = null } }
         vm.toolScreen?.let { ToolScreenHost(vm, it) }
@@ -109,7 +144,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
 
         if (vm.opening) CircularProgressIndicator(Modifier.align(Alignment.Center), color = c.accent)
         // clear of the viewer's floating bottom bubble as well as the home tab bar
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp, start = 8.dp, end = 8.dp))
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp, start = FloatSide, end = FloatSide)) { GlassSnackbar(it) }
 
         vm.passwordRequest?.let { PasswordDialog(vm, it) }
         if (vm.authorPrompt) {
@@ -157,6 +192,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
                 }
             }
         }
+    }
     }
 }
 
@@ -216,3 +252,27 @@ private fun LicencesScreen(vm: AppViewModel) {
         }
     }
 }
+
+/** The page-shrinking look of a back gesture on the viewer: it pulls in toward the side the gesture started from, rounding its corners. */
+private fun Modifier.predictiveBack(progress: Float, edge: Int): Modifier = if (progress <= 0f) this else graphicsLayer {
+    val k = 1f - 0.1f * progress
+    scaleX = k
+    scaleY = k
+    val dir = if (edge == androidx.activity.BackEventCompat.EDGE_RIGHT) -1f else 1f
+    translationX = dir * progress * 16.dp.toPx()
+    shape = androidx.compose.foundation.shape.RoundedCornerShape((28f * progress).dp)
+    clip = true
+}
+
+/** Grow the viewer from the file's thumbnail while Home remains visible underneath. */
+private fun Modifier.openFrom(bounds: androidx.compose.ui.geometry.Rect?, progress: Float): Modifier =
+    if (bounds == null || progress >= 1f) this else graphicsLayer {
+        val startX = (bounds.width / size.width).coerceIn(0.01f, 1f)
+        val startY = (bounds.height / size.height).coerceIn(0.01f, 1f)
+        scaleX = lerp(startX, 1f, progress)
+        scaleY = lerp(startY, 1f, progress)
+        translationX = (bounds.center.x - size.width / 2f) * (1f - progress)
+        translationY = (bounds.center.y - size.height / 2f) * (1f - progress)
+        shape = androidx.compose.foundation.shape.RoundedCornerShape((12f * (1f - progress)).dp)
+        clip = true
+    }

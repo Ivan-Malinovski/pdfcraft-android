@@ -1,5 +1,10 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.rememberHaptics
+import io.github.artcraftandroid.pdfcraft.ui.tickOnClick
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.foundation.background
 import android.os.Build
 import androidx.compose.runtime.Stable
@@ -90,82 +95,12 @@ val BottomBarHeight = 70.dp
 /** A tool's bar inside its bubble: the bubble's own top inset (see [BubbleInsetBottom]) comes out of the usual height, so the buttons sit centred. */
 val ToolBarContentHeight: Dp get() = BottomBarHeight - BubbleInsetBottom
 
-/** The bars float over the pages as bubbles: this far in from the screen's sides. */
-val FloatSide = 12.dp
-
-/** ...and this far from the status band above and the navigation area below. */
-val FloatEdge = 8.dp
-
 /** The room the pages leave under the top bubble: its height, the gap above it and a little air. */
 val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
 
 /** The air inside the bottom bubble, so the end tools and the labels keep clear of its rounded corners. */
 val BubbleInsetX = 6.dp
 val BubbleInsetBottom = 10.dp
-
-/** The bubbles' corner radius: a capsule for a one-row bar. */
-val BubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp)
-
-/**
- * What the bubbles blur: the document, drawn once into a layer. The bubbles draw a blurred copy of the
- * part of it behind them (frosted glass). [origin] is where the document sits in the window.
- */
-@Stable
-class GlassSource(val layer: GraphicsLayer) {
-    var origin by mutableStateOf(Offset.Zero)
-}
-
-val LocalGlassSource = staticCompositionLocalOf<GlassSource?> { null }
-
-@Composable
-fun rememberGlassSource(): GlassSource {
-    val layer = rememberGraphicsLayer()
-    return remember(layer) { GlassSource(layer) }
-}
-
-/** Mark the document as what the bubbles frost: it is recorded into [source] as it draws. */
-fun Modifier.glassSource(source: GlassSource): Modifier = this
-    .onGloballyPositioned { source.origin = it.positionInWindow() }
-    .drawWithContent {
-        source.layer.record { this@drawWithContent.drawContent() }
-        drawLayer(source.layer)
-    }
-
-/**
- * A bar as a floating bubble: rounded, lifted off the page by a soft shadow and a hairline edge, and
- * frosted: the document behind it shows blurred through a translucent surface tint (Android 12 and up;
- * older versions get a nearly opaque surface, as the platform cannot blur what is behind).
- */
-@Composable
-fun Modifier.floatingSurface(shape: androidx.compose.ui.graphics.Shape = BubbleShape): Modifier {
-    val c = pdfColors
-    val glass = LocalGlassSource.current
-    val blurs = glass != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val frost = rememberGraphicsLayer()
-    var at by remember { mutableStateOf(Offset.Zero) }
-    val sigma = with(LocalDensity.current) { 20.dp.toPx() }
-    return this
-        .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.35f))
-        .clip(shape)
-        .onGloballyPositioned { at = it.positionInWindow() }
-        .drawBehind {
-            if (blurs && glass != null) {
-                // The copy is recorded wider than the bubble by the blur's reach, so the blur at the
-                // bubble's edges sees the document there; blurred on its own the edge pixels are smeared
-                // inward, and every line of text passing an edge flashes a streak.
-                val reach = (sigma * 3f).roundToInt()
-                frost.renderEffect = BlurEffect(sigma, sigma, TileMode.Clamp)
-                frost.record(size = IntSize(size.width.roundToInt() + 2 * reach, size.height.roundToInt() + 2 * reach)) {
-                    translate(glass.origin.x - at.x + reach, glass.origin.y - at.y + reach) { drawLayer(glass.layer) }
-                }
-                translate(-reach.toFloat(), -reach.toFloat()) { drawLayer(frost) }
-                drawRect(c.surface.copy(alpha = 0.6f))
-            } else {
-                drawRect(c.surface.copy(alpha = 0.97f))
-            }
-        }
-        .border(0.5.dp, c.divider.copy(alpha = 0.7f), shape)
-}
 
 /**
  * The top bar in plain viewing, as two floating pills: back, a divider and the Read aloud switch on the
@@ -283,10 +218,11 @@ fun UndoMenuButton(canUndo: Boolean, canRedo: Boolean, onUndo: () -> Unit, onRed
 @Composable
 private fun ReadAloudSwitch(on: Boolean, onToggle: () -> Unit) {
     val c = pdfColors
+    val haptics = rememberHaptics()
     val knob by androidx.compose.animation.core.animateDpAsState(if (on) 22.dp else 2.dp, label = "knob")
     val track by androidx.compose.animation.animateColorAsState(if (on) c.switchOn else c.switchOff, label = "track")
     Box(
-        Modifier.size(width = 56.dp, height = 40.dp).clickable(role = Role.Switch, onClick = onToggle).semantics { contentDescription = "Read aloud" },
+        Modifier.size(width = 56.dp, height = 40.dp).clickable(role = Role.Switch) { haptics.toggle(!on); onToggle() }.semantics { contentDescription = "Read aloud" },
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(Modifier.size(width = 56.dp, height = 28.dp).background(track, androidx.compose.foundation.shape.RoundedCornerShape(14.dp))) {
@@ -368,13 +304,14 @@ fun SearchBar(
 @Composable
 private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, subTools: Boolean = false, selected: Boolean = false, width: Dp) {
     val c = pdfColors
+    val tick = tickOnClick(onClick)
     Column(
-        Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label }
+        Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = label }
             .padding(horizontal = 2.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) c.divider else Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)),
+            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) c.divider else Color.Transparent, PdfShapes.Small),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, null, tint = c.icon, modifier = Modifier.size(24.dp))
@@ -535,9 +472,10 @@ fun SubTool(icon: ImageVector, description: String, selected: Boolean, onClick: 
 /** Fill & Sign's text tool: an "A" in a dashed box (a field to type in). */
 @Composable
 fun SubTextField(description: String, selected: Boolean, onClick: () -> Unit) {
+    val tick = tickOnClick(onClick)
     val tint = if (selected) pdfColors.toolAccent else pdfColors.icon
     Box(
-        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -556,9 +494,10 @@ fun SubTextField(description: String, selected: Boolean, onClick: () -> Unit) {
 /** A sub-toolbar tool drawn as a filled dot (Fill & Sign's dot mark). */
 @Composable
 fun SubDot(description: String, selected: Boolean, onClick: () -> Unit) {
+    val tick = tickOnClick(onClick)
     val tint = if (selected) pdfColors.toolAccent else pdfColors.icon
     Box(
-        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) { Box(Modifier.size(8.dp).background(tint, androidx.compose.foundation.shape.CircleShape)) }
 }
@@ -572,12 +511,13 @@ fun SubProperty(icon: ImageVector, description: String, selected: Boolean, onCli
 @Composable
 private fun SubButton(icon: ImageVector, description: String, selected: Boolean, onClick: () -> Unit, enabled: Boolean, width: Dp, shaded: Boolean = false) {
     val c = pdfColors
+    val tick = tickOnClick(onClick)
     val tint = if (selected && !shaded) c.toolAccent else c.icon
     Box(
-        Modifier.width(width).height(54.dp).slideToWhenChosen(selected && !shaded).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(width).height(54.dp).slideToWhenChosen(selected && !shaded).clickable(enabled = enabled, role = Role.Button, onClick = tick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        if (shaded && selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, androidx.compose.foundation.shape.RoundedCornerShape(5.dp)))
+        if (shaded && selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, PdfShapes.Small))
         Icon(icon, null, tint = if (enabled) tint else tint.copy(alpha = 0.38f), modifier = Modifier.size(24.dp))
     }
 }
@@ -596,7 +536,7 @@ fun ColorDot(color: androidx.compose.ui.graphics.Color, selected: Boolean, onCli
         Modifier.width(36.dp).height(54.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = "Colour" },
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, androidx.compose.foundation.shape.RoundedCornerShape(5.dp)))
+        if (selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, PdfShapes.Small))
         Box(Modifier.size(20.dp).background(color, androidx.compose.foundation.shape.CircleShape))
     }
 }

@@ -1,5 +1,12 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.FloatSide
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import io.github.artcraftandroid.pdfcraft.ui.glassSource
+import io.github.artcraftandroid.pdfcraft.ui.LocalGlassSource
+import io.github.artcraftandroid.pdfcraft.ui.rememberGlassSource
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import android.app.Activity
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
@@ -148,6 +155,15 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             ctl.lastMoved = SystemClock.uptimeMillis()
         }
     }
+    // a light tick as a page is reached in single-page mode (a swipe or the scrubber), as a detent
+    val haptics = io.github.artcraftandroid.pdfcraft.ui.rememberHaptics()
+    LaunchedEffect(doc) {
+        var last = doc.viewer.currentPage
+        snapshotFlow { doc.viewer.currentPage }.collect {
+            if (it != last && doc.viewer.mode == PageMode.SinglePage) haptics.tick()
+            last = it
+        }
+    }
     var indicatorVisible by remember { mutableStateOf(false) }
     LaunchedEffect(ctl.lastMoved) {
         if (ctl.lastMoved == 0L) return@LaunchedEffect
@@ -168,7 +184,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
 
     val search = doc.search
     val selection = doc.selection
-    val glass = rememberGlassSource()
+    // the app's glass source (Home and the viewer share it, so what floats above either frosts it)
+    val glass = LocalGlassSource.current ?: rememberGlassSource()
     val canvasLook = CanvasLook(background = c.desk, pageShadow = c.pageEdge, invert = ctl.nightMode)
 
     BackHandler(enabled = ctl.searching || ctl.tool != ViewerTool.None || selection.selection != null) {
@@ -261,6 +278,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             Unit
         } else if (doc.pageCount >= 3 && doc.viewer.mode == PageMode.SinglePage) {
             HorizontalScrubber(
+                vm = vm,
                 doc = doc,
                 visible = indicatorVisible && !ctl.searching,
                 bottom = with(density) { doc.viewer.padBottom.toDp() },
@@ -269,6 +287,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             )
         } else if (doc.pageCount >= 3) {
             Scrubber(
+                vm = vm,
                 doc = doc,
                 visible = indicatorVisible && !ctl.searching,
                 top = with(density) { (doc.viewer.padTop).toDp() },
@@ -295,8 +314,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut(),
         ) {
             Row(
-                Modifier.height(32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(5.dp)).background(Color(0xCCFFFFFF))
-                    .border(0.5.dp, Color(0xFFF5F5F5), androidx.compose.foundation.shape.RoundedCornerShape(5.dp))
+                Modifier.height(32.dp).clip(PdfShapes.Pill).background(Color(0xCCFFFFFF))
+                    .border(0.5.dp, Color(0xFFF5F5F5), PdfShapes.Pill)
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -311,8 +330,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             Spacer(Modifier.fillMaxWidth().height(with(density) { statusPx.toDp() }))
             AnimatedVisibility(
                 ctl.barsVisible,
-                enter = slideInVertically(tween(PdfMotion.BARS_MS)) { -it } + fadeIn(tween(PdfMotion.BARS_MS)),
-                exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { -it } + fadeOut(tween(PdfMotion.BARS_MS)),
+                enter = slideInVertically(PdfMotion.barsIn()) { -it } + fadeIn(tween(PdfMotion.BARS_FADE_MS)),
+                exit = slideOutVertically(PdfMotion.barsOut()) { -it } + fadeOut(tween(PdfMotion.BARS_FADE_MS)),
             ) {
               Box(Modifier.fillMaxWidth().padding(start = FloatSide, end = FloatSide, top = FloatEdge)) {
                 if (ctl.searching) {
@@ -370,10 +389,10 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             vm.success?.let { SuccessBannerView(it, onClose = { vm.success = null }) }
             AnimatedVisibility(
                 ctl.barsVisible && !ctl.searching && !vm.readingMode,
-                enter = slideInVertically(tween(PdfMotion.BARS_MS)) { it } + fadeIn(tween(PdfMotion.BARS_MS)),
-                exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { it } + fadeOut(tween(PdfMotion.BARS_MS)),
+                enter = slideInVertically(PdfMotion.barsIn()) { it } + fadeIn(tween(PdfMotion.BARS_FADE_MS)),
+                exit = slideOutVertically(PdfMotion.barsOut()) { it } + fadeOut(tween(PdfMotion.BARS_FADE_MS)),
             ) {
-                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
+                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Bubble).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
                     if (ctl.tool == ViewerTool.None) {
                         QuickToolbar(
                             tools = vm.quickToolbar.bar,

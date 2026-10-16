@@ -4,7 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector2D
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.splineBasedDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -21,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import io.github.artcraftandroid.pdfcraft.ui.PdfMotion
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -105,7 +105,7 @@ fun PageCanvas(
                         val to = if (from < 0.99f) 1f else if (from < 1.6f) 2.5f else 1f
                         flinger[0] = scope.launch {
                             val anim = Animatable(from)
-                            anim.animateTo(to, tween(DOUBLE_TAP_MS)) { state.zoomTo(value, p) }
+                            anim.animateTo(to, PdfMotion.zoom()) { state.zoomTo(value, p) }
                             if (state.mode == PageMode.SinglePage && to <= 1f) state.goToPage(state.currentPage)
                         }
                     },
@@ -249,5 +249,3 @@ private fun DrawScope.drawImageIn(img: PageImage, dst: Rect, invert: Boolean) {
         colorFilter = if (invert) invertFilter else null,
     )
 }
-
-private const val DOUBLE_TAP_MS = 250
