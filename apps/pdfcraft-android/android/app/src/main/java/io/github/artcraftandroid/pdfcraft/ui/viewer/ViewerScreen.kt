@@ -93,12 +93,12 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         if (window != null) {
             val insets = WindowCompat.getInsetsController(window, view)
             insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // the status bar stays hidden in the viewer (a black band where the camera is), as the
-            // reference's; the navigation bar comes and goes with the viewer's bars
+            // the status bar stays hidden in the viewer, and the document shows where it would be (no
+            // black band around the camera); the navigation bar comes and goes with the viewer's bars
             insets.hide(WindowInsetsCompat.Type.statusBars())
             if (ctl.barsVisible) insets.show(WindowInsetsCompat.Type.navigationBars()) else insets.hide(WindowInsetsCompat.Type.navigationBars())
-            // light status icons on the black band, as the reference has in both themes
-            insets.isAppearanceLightStatusBars = false
+            // the icons of a swiped-in status bar sit over the document's surround
+            insets.isAppearanceLightStatusBars = !c.dark
             insets.isAppearanceLightNavigationBars = !c.dark
         }
         onDispose {
@@ -298,7 +298,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
 
         // The bars.
         Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
-            Box(Modifier.fillMaxWidth().height(with(density) { statusPx.toDp() }).background(Color.Black))
+            Spacer(Modifier.fillMaxWidth().height(with(density) { statusPx.toDp() }))
             AnimatedVisibility(
                 ctl.barsVisible,
                 enter = slideInVertically(tween(PdfMotion.BARS_MS)) { -it } + fadeIn(tween(PdfMotion.BARS_MS)),
