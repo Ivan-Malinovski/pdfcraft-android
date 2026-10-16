@@ -97,7 +97,8 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         }
     }
     val doc = vm.document
-    val openBounds = remember(doc) { if (doc != null) vm.openThumbnailBounds else null }
+    // Reading Mode lays out text without a page canvas, so it has no page rectangle to target.
+    val openBounds = remember(doc) { if (doc != null && !vm.readingMode) vm.openThumbnailBounds else null }
     val openProgress = remember(doc) { Animatable(if (openBounds != null) 0f else 1f) }
     val openPath = vm.openThumbnailPath
     var openImage by remember(openPath) { mutableStateOf<ImageBitmap?>(null) }
@@ -105,10 +106,16 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         if (openPath != null) openImage = withContext(Dispatchers.IO) { vm.thumbnails.of(openPath)?.asImageBitmap() }
     }
     LaunchedEffect(doc) {
-        if (doc != null && openBounds != null) {
-            snapshotFlow { doc.viewer.viewW }.first { it > 0f }
-            androidx.compose.runtime.withFrameNanos { }
-            openProgress.animateTo(1f, tween(durationMillis = 340))
+        if (doc != null) {
+            if (openBounds != null) {
+                val laidOut = kotlinx.coroutines.withTimeoutOrNull(1000) {
+                    snapshotFlow { doc.viewer.viewW }.first { it > 0f }
+                }
+                if (laidOut != null) {
+                    androidx.compose.runtime.withFrameNanos { }
+                    openProgress.animateTo(1f, tween(durationMillis = 340))
+                } else openProgress.snapTo(1f)
+            }
             vm.openThumbnailBounds = null
             vm.openThumbnailPath = null
         }
