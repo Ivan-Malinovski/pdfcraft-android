@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -70,9 +71,35 @@ val TopBarHeight = 57.dp
 /** The bottom quick toolbar's height (the reference's: 70 dp). */
 val BottomBarHeight = 70.dp
 
+/** The bars float over the pages as bubbles: this far in from the screen's sides. */
+val FloatSide = 12.dp
+
+/** ...and this far from the status band above and the navigation area below. */
+val FloatEdge = 8.dp
+
+/** The room the pages leave under the top bubble: its height, the gap above it and a little air. */
+val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
+
+/** The bubbles' corner radius: a capsule for a one-row bar. */
+val BubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp)
+
 /**
- * The top bar in plain viewing: back, a divider and the Read aloud switch, then Find, Share and
- * More. With a tool active the back arrow becomes a check mark (Done), the switch goes, and Undo
+ * A bar as a floating bubble: rounded, lifted off the page by a soft shadow and a hairline edge, on
+ * the bar surface.
+ */
+@Composable
+fun Modifier.floatingSurface(shape: androidx.compose.ui.graphics.Shape = BubbleShape): Modifier {
+    val c = pdfColors
+    return this
+        .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.35f))
+        .clip(shape)
+        .background(c.surface)
+        .border(0.5.dp, c.divider.copy(alpha = 0.7f), shape)
+}
+
+/**
+ * The top bar in plain viewing, as two floating pills: back, a divider and the Read aloud switch on the
+ * left; Find, Share and More on the right. With a tool active the back arrow becomes a check mark (Done), the switch goes, and Undo
  * and Redo appear once there is something to undo.
  */
 @Composable
@@ -97,13 +124,7 @@ fun ViewerTopBar(
     redoLabel: String? = null,
 ) {
     val c = pdfColors
-    Row(
-        Modifier.fillMaxWidth().height(TopBarHeight).background(c.surface).drawBehind {
-            val line = 1.dp.toPx()
-            drawRect(c.divider, Offset(0f, size.height - line), androidx.compose.ui.geometry.Size(size.width, line))
-        }.padding(bottom = 1.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val back: @Composable () -> Unit = {
         Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
             if (toolActive && doneIsCheck) {
                 BarIcon(LucideIcons.Check, "Done", onBack, tint = c.toolAccent)
@@ -111,37 +132,46 @@ fun ViewerTopBar(
                 BarIcon(LucideIcons.ArrowLeft, "Back", onBack, iconSize = 27.dp)
             }
         }
-        if (title != null) {
+    }
+    // a tool with its own title keeps one pill: Done, the title and Undo
+    if (title != null) {
+        Row(Modifier.fillMaxWidth().height(TopBarHeight).floatingSurface(), verticalAlignment = Alignment.CenterVertically) {
+            back()
             Spacer(Modifier.width(6.dp))
             Text(title, color = c.label, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.weight(1f))
             UndoMenuButton(canUndo, canRedo, onUndo, onRedo, undoLabel, redoLabel)
             Spacer(Modifier.width(10.dp))
-            return@Row
         }
-        if (!toolActive) {
-            BarDivider(height = 24.dp)
-            Spacer(Modifier.width(14.dp))
-            // with something to undo the reference shrinks the switch to a plain speaker button
-            if (canUndo && !readingAloud) BarIcon(LucideIcons.Volume2, "Read aloud", onReadAloud) else ReadAloudSwitch(readingAloud, onReadAloud)
+        return
+    }
+    // otherwise two pills: where you are (back, Read aloud) on the left, what you can do on the right
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.height(TopBarHeight).floatingSurface(), verticalAlignment = Alignment.CenterVertically) {
+            back()
+            if (!toolActive) {
+                BarDivider(height = 24.dp)
+                Spacer(Modifier.width(14.dp))
+                // with something to undo the reference shrinks the switch to a plain speaker button
+                if (canUndo && !readingAloud) BarIcon(LucideIcons.Volume2, "Read aloud", onReadAloud) else ReadAloudSwitch(readingAloud, onReadAloud)
+                Spacer(Modifier.width(10.dp))
+            }
         }
         Spacer(Modifier.weight(1f))
-        // while reading aloud the bar holds only back and the switch, as the reference's
-        if (readingAloud && !toolActive) {
-            Spacer(Modifier.width(10.dp))
-            return@Row
-        }
-        if (toolActive) {
-            if (canUndo || canRedo) {
-                BarIcon(LucideIcons.Undo2, "Undo", onUndo, enabled = canUndo)
-                BarIcon(LucideIcons.Redo2, "Redo", onRedo, enabled = canRedo)
+        // while reading aloud only the left pill stays, as the reference's bar holds only back and the switch
+        if (readingAloud && !toolActive) return@Row
+        Row(Modifier.height(TopBarHeight).floatingSurface().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (toolActive) {
+                if (canUndo || canRedo) {
+                    BarIcon(LucideIcons.Undo2, "Undo", onUndo, enabled = canUndo)
+                    BarIcon(LucideIcons.Redo2, "Redo", onRedo, enabled = canRedo)
+                }
+            } else if (canUndo) {
+                UndoMenuButton(canUndo, canRedo, onUndo, onRedo, undoLabel, redoLabel)
             }
-        } else if (canUndo) {
-            UndoMenuButton(canUndo, canRedo, onUndo, onRedo, undoLabel, redoLabel)
+            if (onSearch != null) BarIcon(LucideIcons.Search, "Find in document", onSearch)
+            BarIcon(LucideIcons.Share2, "Share", onShare)
+            BarIcon(LucideIcons.EllipsisVertical, "More options", onMore, selected = moreOpen)
         }
-        if (onSearch != null) BarIcon(LucideIcons.Search, "Find in document", onSearch)
-        BarIcon(LucideIcons.Share2, "Share", onShare)
-        BarIcon(LucideIcons.EllipsisVertical, "More options", onMore, selected = moreOpen)
-        Spacer(Modifier.width(10.dp))
     }
 }
 
@@ -202,6 +232,7 @@ private fun ReadAloudSwitch(on: Boolean, onToggle: () -> Unit) {
  */
 @Composable
 fun SearchBar(
+    modifier: Modifier = Modifier,
     query: String,
     onQuery: (String) -> Unit,
     canStep: Boolean,
@@ -216,10 +247,7 @@ fun SearchBar(
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
-        Modifier.fillMaxWidth().height(TopBarHeight).background(c.surface).drawBehind {
-            val line = 1.dp.toPx()
-            drawRect(c.divider, Offset(0f, size.height - line), androidx.compose.ui.geometry.Size(size.width, line))
-        }.padding(bottom = 1.dp),
+        modifier.fillMaxWidth().height(TopBarHeight),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) { BarIcon(LucideIcons.ArrowLeft, "Collapse", onClose, iconSize = 27.dp) }
@@ -321,7 +349,7 @@ fun QuickToolbar(
 ) {
     val c = pdfColors
     var open by remember { androidx.compose.runtime.mutableStateOf(false) }
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().background(c.surface)) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
         val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
         val shown = tools.take(slots)
         val itemW = minOf(72.dp, (maxWidth - 16.dp) / maxOf(7, shown.size + 1))
@@ -401,7 +429,7 @@ fun Modifier.barTopLine(): Modifier {
 @Composable
 fun SubToolbar(content: @Composable () -> Unit) {
     val scroll = androidx.compose.foundation.rememberScrollState()
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine().background(pdfColors.surface)) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine()) {
         Row(
             Modifier.fillMaxHeight().horizontalScroll(scroll).widthIn(min = maxWidth),
             horizontalArrangement = Arrangement.Center,

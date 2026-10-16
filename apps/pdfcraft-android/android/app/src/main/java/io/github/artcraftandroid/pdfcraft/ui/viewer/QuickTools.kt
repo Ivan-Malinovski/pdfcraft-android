@@ -73,7 +73,7 @@ enum class QuickTool(val id: String, val label: String, val title: String, val i
     Highlight("highlight", "Highlight", "Highlight", LucideIcons.Highlighter, ToolHues.text, subTools = true),
     Draw("draw", "Draw", "Draw", LucideIcons.PenLine, ToolHues.sign),
     FillSign("fillsign", "Fill & Sign", "Fill & Sign", LucideIcons.Signature, ToolHues.sign, subTools = true),
-    Export("export", "Export PDF", "Export PDF", LucideIcons.FileOutput, ToolHues.export),
+    Export("export", "Export", "Export PDF", LucideIcons.FileOutput, ToolHues.export),
     Combine("combine", "Combine", "Combine files", LucideIcons.Combine, ToolHues.combine),
     Compress("compress", "Compress", "Compress PDF", LucideIcons.FileArchive, ToolHues.compress),
     Protect("protect", "Password", "Set password", LucideIcons.FileLock2, ToolHues.protect),

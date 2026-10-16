@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -105,17 +106,17 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         }
     }
 
-    // The page area starts under the top bar and leaves room for the bottom bar. The room is the same
-    // whether the bars show or not (they hide as the reader scrolls: the pages must not jump), and
+    // The pages start below the top bubble and leave room under the bottom one. The room is the same
+    // whether the bubbles show or not (they hide as the reader scrolls: the pages must not jump), and
     // the navigation bar's too, which hides with them.
     val statusPx = maxOf(WindowInsets.statusBars.getTop(density), WindowInsets.displayCutout.getTop(density)).toFloat()
     val navPx = WindowInsets.navigationBarsIgnoringVisibility.getBottom(density).toFloat()
-    val topPx = with(density) { TopBarHeight.toPx() }
+    val topPx = with(density) { TopBubbleReserve.toPx() }
     // the quick toolbar grows with a large font setting: the page area leaves room for that too
     var quickExtraPx by remember { mutableIntStateOf(0) }
-    val bottomPx = with(density) { if (ctl.tool == ViewerTool.None) QuickBarHeight.toPx() + quickExtraPx else BottomBarHeight.toPx() }
+    val bottomPx = with(density) { (if (ctl.tool == ViewerTool.None) QuickBarHeight.toPx() + quickExtraPx else BottomBarHeight.toPx()) + FloatEdge.toPx() }
     // keyed on the document too: one opened over another (Create, Combine) has a fresh page view
-    LaunchedEffect(doc, statusPx, navPx, ctl.searching, ctl.tool, vm.readingMode, bottomPx) {
+    LaunchedEffect(doc, statusPx, navPx, topPx, ctl.searching, ctl.tool, vm.readingMode, bottomPx) {
         val bottomShown = !ctl.searching && !vm.readingMode
         doc.viewer.setPadding(
             top = statusPx + topPx,
@@ -303,9 +304,11 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                 enter = slideInVertically(tween(PdfMotion.BARS_MS)) { -it } + fadeIn(tween(PdfMotion.BARS_MS)),
                 exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { -it } + fadeOut(tween(PdfMotion.BARS_MS)),
             ) {
+              Box(Modifier.fillMaxWidth().padding(start = FloatSide, end = FloatSide, top = FloatEdge)) {
                 if (ctl.searching) {
                     var query by remember { mutableStateOf(search.query) }
                     SearchBar(
+                        modifier = Modifier.floatingSurface(),
                         query = query,
                         onQuery = {
                             query = it
@@ -323,7 +326,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                     )
                 } else {
                     val fa = vm.fieldActions
-                    if (fa != null) FieldTopBar(fa) else ViewerTopBar(
+                    if (fa != null) FieldTopBar(fa, Modifier.floatingSurface()) else ViewerTopBar(
                         toolActive = ctl.tool != ViewerTool.None,
                         doneIsCheck = ctl.tool != ViewerTool.Comment,
                         // while drawing, the strokes not yet added have their own undo and redo
@@ -348,6 +351,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                         redoLabel = if (doc.localUndo != null) "Drawing" else doc.info.redo,
                     )
                 }
+              }
             }
         }
         // the Read Aloud player takes the bottom bar's place
@@ -359,7 +363,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                 enter = slideInVertically(tween(PdfMotion.BARS_MS)) { it } + fadeIn(tween(PdfMotion.BARS_MS)),
                 exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { it } + fadeOut(tween(PdfMotion.BARS_MS)),
             ) {
-                Column {
+                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape)) {
                     if (ctl.tool == ViewerTool.None) {
                         QuickToolbar(
                             tools = vm.quickToolbar.bar,
@@ -379,8 +383,6 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                     }
                 }
             }
-            // the navigation bar's band stays solid while the bars show (also while searching)
-            if (ctl.barsVisible) Box(Modifier.fillMaxWidth().windowInsetsBottomHeight(WindowInsets.navigationBars).background(c.navBand))
         }
 
         // The active tool's sheets, over everything.

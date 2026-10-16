@@ -87,7 +87,7 @@ fun MoreSheet(vm: AppViewModel, doc: OpenDocument) {
             androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(density),
             androidx.compose.foundation.layout.WindowInsets.displayCutout.getTop(density),
         ).toDp()
-    } + TopBarHeight
+    } + TopBubbleReserve
     PdfSheet(onDismiss = ::close, maxHeightFraction = fraction, topReserve = top) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
