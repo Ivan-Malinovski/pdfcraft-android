@@ -52,6 +52,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -349,15 +352,16 @@ fun FileListRow(vm: AppViewModel, r: FileRow, recent: Boolean = false) {
     val c = pdfColors
     val selecting = vm.selectedFiles.isNotEmpty()
     val ticked = r.key in vm.selectedFiles
+    var thumbBounds by remember(r.key) { mutableStateOf<Rect?>(null) }
     // a long press ticks the file (several can then be shared, combined or deleted together)
     Row(
         Modifier.fillMaxWidth()
             .background(if (ticked) c.toolAccent.copy(alpha = 0.12f) else Color.Transparent)
-            .combinedClickable(onClick = { if (selecting) vm.toggleSelected(r) else r.open() }, onLongClick = { vm.toggleSelected(r) })
+            .combinedClickable(onClick = { if (selecting) vm.toggleSelected(r) else { vm.openThumbnailBounds = thumbBounds; r.open() } }, onLongClick = { vm.toggleSelected(r) })
             .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) { FileThumb(vm, r.thumbPath, 36, 42) }
+        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) { Box(Modifier.onGloballyPositioned { thumbBounds = it.boundsInRoot() }) { FileThumb(vm, r.thumbPath, 36, 42) } }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -418,8 +422,9 @@ private fun SelectionBar(vm: AppViewModel, recent: Boolean, onDelete: () -> Unit
 @Composable
 private fun FileGridCell(vm: AppViewModel, r: FileRow, modifier: Modifier, recent: Boolean) {
     val c = pdfColors
-    Column(modifier.clickable(onClick = r.open).padding(vertical = 8.dp)) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 160.dp), contentAlignment = Alignment.Center) { FileThumb(vm, r.thumbPath, 120, 156) }
+    var thumbBounds by remember(r.key) { mutableStateOf<Rect?>(null) }
+    Column(modifier.clickable { vm.openThumbnailBounds = thumbBounds; r.open() }.padding(vertical = 8.dp)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 160.dp), contentAlignment = Alignment.Center) { Box(Modifier.onGloballyPositioned { thumbBounds = it.boundsInRoot() }) { FileThumb(vm, r.thumbPath, 120, 156) } }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
                 Text(r.name.removeSuffix(".pdf"), color = c.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -67,6 +67,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var document by mutableStateOf<OpenDocument?>(null)
         private set
 
+    /** The Home thumbnail that launched the current open, in root coordinates. */
+    var openThumbnailBounds: androidx.compose.ui.geometry.Rect? = null
+
     var recentList by mutableStateOf<List<RecentFile>>(emptyList())
         private set
 
