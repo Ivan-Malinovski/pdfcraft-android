@@ -35,6 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,7 +91,22 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         }
     }
     // Back in the viewer closes the document (saving it) and returns to Home
-    androidx.activity.compose.BackHandler(enabled = doc != null && vm.toolScreen == null) { vm.closeDocument() }
+    // (predictive: the page shrinks into a card as the gesture is made, and springs back if it is let go)
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    var backEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = doc != null && vm.toolScreen == null) { events ->
+        try {
+            events.collect { backProgress = it.progress; backEdge = it.swipeEdge }
+            androidx.compose.animation.core.animate(backProgress, 1f, animationSpec = androidx.compose.animation.core.tween(120)) { v, _ -> backProgress = v }
+            vm.closeDocument()
+            backProgress = 0f
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                androidx.compose.animation.core.animate(backProgress, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backProgress = v }
+            }
+            throw e
+        }
+    }
     // what floats above Home or the viewer (sheets, the snackbar, the viewer's bars) frosts the screen below it
     val glass = rememberGlassSource()
     androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
@@ -100,7 +118,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
             .background(c.surface),
     ) {
         when {
-            doc != null -> ViewerScreen(vm, doc)
+            doc != null -> Box(Modifier.fillMaxSize().predictiveBack(backProgress, backEdge)) { ViewerScreen(vm, doc) }
             else -> Box(Modifier.fillMaxSize().glassSource(glass)) { HomeRoot(vm, onBrowse) }
         }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
@@ -219,4 +237,15 @@ private fun LicencesScreen(vm: AppViewModel) {
             Spacer(Modifier.height(32.dp))
         }
     }
+}
+
+/** The page-shrinking look of a back gesture on the viewer: it pulls in toward the side the gesture started from, rounding its corners. */
+private fun Modifier.predictiveBack(progress: Float, edge: Int): Modifier = if (progress <= 0f) this else graphicsLayer {
+    val k = 1f - 0.1f * progress
+    scaleX = k
+    scaleY = k
+    val dir = if (edge == androidx.activity.BackEventCompat.EDGE_RIGHT) -1f else 1f
+    translationX = dir * progress * 16.dp.toPx()
+    shape = androidx.compose.foundation.shape.RoundedCornerShape((28f * progress).dp)
+    clip = true
 }

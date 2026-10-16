@@ -3,10 +3,12 @@ package io.github.artcraftandroid.pdfcraft.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -58,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Arrangement
@@ -89,7 +92,18 @@ import kotlinx.coroutines.launch
 object PdfMotion {
     const val SHEET_IN_MS = 250
     const val SHEET_OUT_MS = 200
-    const val BARS_MS = 300
+    const val BARS_FADE_MS = 220
+
+    /** Bars and sheets move on springs: they carry the speed of a gesture and settle without a fixed duration. */
+    fun <T> barsIn(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)
+    fun <T> barsOut(): FiniteAnimationSpec<T> = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+    fun <T> sheetIn(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)
+
+    /** The settle of a dragged sheet that was let go short of closing. */
+    fun <T> snapBack(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium)
+
+    /** Zoom easing in or out (a double tap, the fit back). */
+    fun <T> zoom(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.9f, stiffness = 380f)
 }
 
 /** An icon button of the bars: a 46 dp target with a 24 dp icon, a pressed background when [selected]. */
@@ -173,7 +187,19 @@ fun PdfSheet(
     val own = remember { MutableTransitionState(false) }
     LaunchedEffect(own) { own.targetState = true }
     val visible = LocalSheetVisible.current ?: own
-    BackHandler(enabled = visible.targetState, onBack = onDismiss)
+    // the back gesture shrinks the sheet toward the bottom edge as it is made; a cancelled one lets it spring back
+    var back by remember { mutableFloatStateOf(0f) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = visible.targetState) { events ->
+        try {
+            events.collect { back = it.progress }
+            onDismiss()
+        } finally {
+            // on commit the sheet is closing anyway: reset once it has gone
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                animate(back, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> back = v }
+            }
+        }
+    }
     val scope = rememberCoroutineScope()
     var drag by remember { mutableFloatStateOf(0f) }
     var height by remember { mutableIntStateOf(0) }
@@ -196,7 +222,7 @@ fun PdfSheet(
             AnimatedVisibility(
                 visible,
                 modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(tween(PdfMotion.SHEET_IN_MS, easing = LinearOutSlowInEasing)) { it },
+                enter = slideInVertically(PdfMotion.sheetIn()) { it },
                 exit = slideOutVertically(tween(PdfMotion.SHEET_OUT_MS, easing = FastOutLinearInEasing)) { it },
             ) {
                 Column(
@@ -207,6 +233,12 @@ fun PdfSheet(
                         .heightIn(max = maxH)
                         .offset { IntOffset(0, drag.roundToInt()) }
                         .onSizeChanged { height = it.height }
+                        .graphicsLayer {
+                            val k = 1f - 0.08f * back
+                            scaleX = k
+                            scaleY = k
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        }
                         .floatingSurface(PdfShapes.Large, tint = background ?: pdfColors.surface, alpha = GLASS_PANEL_ALPHA)
                         .pointerInput(Unit) { detectTapGestures() },
                 ) {
@@ -222,7 +254,7 @@ fun PdfSheet(
                                             if (drag > height / 4f) {
                                                 onDismiss()
                                             }
-                                            animate(drag, 0f, animationSpec = tween(150)) { v, _ -> drag = v }
+                                            animate(drag, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> drag = v }
                                         }
                                     },
                                     onVerticalDrag = { _, dy -> drag = (drag + dy).coerceAtLeast(0f) },
@@ -335,6 +367,7 @@ fun BoxScope.HintToast(text: String?, modifier: Modifier = Modifier, alignment: 
 @Composable
 fun PdfSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val c = pdfColors
+    val haptics = rememberHaptics()
     val track = if (checked) c.accent else if (c.dark) Color(0xFF959595) else Color(0xFFB0B0B0)
     Box(
         modifier
@@ -342,7 +375,7 @@ fun PdfSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier 
             .clip(CircleShape)
             .background(if (checked) track else Color.Transparent)
             .then(if (checked) Modifier else Modifier.background(Color.Transparent))
-            .clickable(role = Role.Switch) { onChange(!checked) },
+            .clickable(role = Role.Switch) { haptics.toggle(!checked); onChange(!checked) },
     ) {
         if (!checked) {
             Box(Modifier.fillMaxSize().clip(CircleShape).background(track.copy(alpha = 0.0f)))

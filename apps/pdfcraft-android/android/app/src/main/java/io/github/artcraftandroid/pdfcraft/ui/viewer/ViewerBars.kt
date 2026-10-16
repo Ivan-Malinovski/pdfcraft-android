@@ -1,5 +1,7 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.rememberHaptics
+import io.github.artcraftandroid.pdfcraft.ui.tickOnClick
 import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
 import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
@@ -216,10 +218,11 @@ fun UndoMenuButton(canUndo: Boolean, canRedo: Boolean, onUndo: () -> Unit, onRed
 @Composable
 private fun ReadAloudSwitch(on: Boolean, onToggle: () -> Unit) {
     val c = pdfColors
+    val haptics = rememberHaptics()
     val knob by androidx.compose.animation.core.animateDpAsState(if (on) 22.dp else 2.dp, label = "knob")
     val track by androidx.compose.animation.animateColorAsState(if (on) c.switchOn else c.switchOff, label = "track")
     Box(
-        Modifier.size(width = 56.dp, height = 40.dp).clickable(role = Role.Switch, onClick = onToggle).semantics { contentDescription = "Read aloud" },
+        Modifier.size(width = 56.dp, height = 40.dp).clickable(role = Role.Switch) { haptics.toggle(!on); onToggle() }.semantics { contentDescription = "Read aloud" },
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(Modifier.size(width = 56.dp, height = 28.dp).background(track, androidx.compose.foundation.shape.RoundedCornerShape(14.dp))) {
@@ -301,8 +304,9 @@ fun SearchBar(
 @Composable
 private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, subTools: Boolean = false, selected: Boolean = false, width: Dp) {
     val c = pdfColors
+    val tick = tickOnClick(onClick)
     Column(
-        Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label }
+        Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = label }
             .padding(horizontal = 2.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -468,9 +472,10 @@ fun SubTool(icon: ImageVector, description: String, selected: Boolean, onClick: 
 /** Fill & Sign's text tool: an "A" in a dashed box (a field to type in). */
 @Composable
 fun SubTextField(description: String, selected: Boolean, onClick: () -> Unit) {
+    val tick = tickOnClick(onClick)
     val tint = if (selected) pdfColors.toolAccent else pdfColors.icon
     Box(
-        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -489,9 +494,10 @@ fun SubTextField(description: String, selected: Boolean, onClick: () -> Unit) {
 /** A sub-toolbar tool drawn as a filled dot (Fill & Sign's dot mark). */
 @Composable
 fun SubDot(description: String, selected: Boolean, onClick: () -> Unit) {
+    val tick = tickOnClick(onClick)
     val tint = if (selected) pdfColors.toolAccent else pdfColors.icon
     Box(
-        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(62.dp).height(54.dp).slideToWhenChosen(selected).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) { Box(Modifier.size(8.dp).background(tint, androidx.compose.foundation.shape.CircleShape)) }
 }
@@ -505,9 +511,10 @@ fun SubProperty(icon: ImageVector, description: String, selected: Boolean, onCli
 @Composable
 private fun SubButton(icon: ImageVector, description: String, selected: Boolean, onClick: () -> Unit, enabled: Boolean, width: Dp, shaded: Boolean = false) {
     val c = pdfColors
+    val tick = tickOnClick(onClick)
     val tint = if (selected && !shaded) c.toolAccent else c.icon
     Box(
-        Modifier.width(width).height(54.dp).slideToWhenChosen(selected && !shaded).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        Modifier.width(width).height(54.dp).slideToWhenChosen(selected && !shaded).clickable(enabled = enabled, role = Role.Button, onClick = tick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         if (shaded && selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, PdfShapes.Small))
