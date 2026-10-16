@@ -1,6 +1,8 @@
 package io.github.artcraftandroid.pdfcraft.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -50,6 +52,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -84,13 +96,26 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     val doc = vm.document
     val openBounds = remember(doc) { if (doc != null) vm.openThumbnailBounds else null }
     val openProgress = remember(doc) { Animatable(if (openBounds != null) 0f else 1f) }
+    val openPath = vm.openThumbnailPath
+    var openImage by remember(openPath) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(openPath) {
+        if (openPath != null) openImage = withContext(Dispatchers.IO) { vm.thumbnails.of(openPath)?.asImageBitmap() }
+    }
     LaunchedEffect(doc) {
         if (doc != null && openBounds != null) {
+            snapshotFlow { doc.viewer.viewW }.first { it > 0f }
+            androidx.compose.runtime.withFrameNanos { }
             openProgress.animateTo(1f, tween(durationMillis = 340))
             vm.openThumbnailBounds = null
+            vm.openThumbnailPath = null
         }
     }
-    LaunchedEffect(vm.opening, doc) { if (!vm.opening && doc == null) vm.openThumbnailBounds = null }
+    LaunchedEffect(vm.opening, doc) {
+        if (!vm.opening && doc == null) {
+            vm.openThumbnailBounds = null
+            vm.openThumbnailPath = null
+        }
+    }
     // outside the viewer (which sets its own) the bar icons follow the app's theme, not the system's
     val view = androidx.compose.ui.platform.LocalView.current
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
@@ -129,12 +154,20 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .background(c.surface),
     ) {
-        if (doc == null || (openBounds != null && openProgress.value < 1f)) {
-            Box(Modifier.fillMaxSize().then(if (doc == null) Modifier.glassSource(glass) else Modifier)) { HomeRoot(vm, onBrowse) }
+        if (doc == null || backProgress > 0f || (openBounds != null && openProgress.value < 1f)) {
+            Box(
+                Modifier.fillMaxSize()
+                    .graphicsLayer { alpha = if (doc == null || backProgress > 0f) 1f else ((0.8f - openProgress.value) / 0.35f).coerceIn(0f, 1f) }
+                    .then(if (doc == null) Modifier.glassSource(glass) else Modifier),
+            ) { HomeRoot(vm, onBrowse) }
         }
         if (doc != null) Box(
-            Modifier.fillMaxSize().openFrom(openBounds, openProgress.value).predictiveBack(backProgress, backEdge),
+            Modifier.fillMaxSize().graphicsLayer { alpha = if (openBounds == null) 1f else ((openProgress.value - 0.72f) / 0.28f).coerceIn(0f, 1f) }.predictiveBack(backProgress, backEdge),
         ) { ViewerScreen(vm, doc) }
+        if (doc != null && openBounds != null && openProgress.value < 1f && doc.viewer.viewW > 0f) {
+            val page = doc.viewer.currentPage
+            OpeningThumbnail(openBounds, doc.viewer.pageRectOnScreen(page), openProgress.value, openImage)
+        }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
         if (doc == null) vm.fileSheet?.let { (r, recent) -> io.github.artcraftandroid.pdfcraft.ui.home.FileSheet(vm, r, recent) { vm.fileSheet = null } }
         vm.toolScreen?.let { ToolScreenHost(vm, it) }
@@ -264,15 +297,22 @@ private fun Modifier.predictiveBack(progress: Float, edge: Int): Modifier = if (
     clip = true
 }
 
-/** Grow the viewer from the file's thumbnail while Home remains visible underneath. */
-private fun Modifier.openFrom(bounds: androidx.compose.ui.geometry.Rect?, progress: Float): Modifier =
-    if (bounds == null || progress >= 1f) this else graphicsLayer {
-        val startX = (bounds.width / size.width).coerceIn(0.01f, 1f)
-        val startY = (bounds.height / size.height).coerceIn(0.01f, 1f)
-        scaleX = lerp(startX, 1f, progress)
-        scaleY = lerp(startY, 1f, progress)
-        translationX = (bounds.center.x - size.width / 2f) * (1f - progress)
-        translationY = (bounds.center.y - size.height / 2f) * (1f - progress)
-        shape = androidx.compose.foundation.shape.RoundedCornerShape((12f * (1f - progress)).dp)
-        clip = true
+/** Carry the file thumbnail into the visible page rectangle, then hand it to the canvas. */
+@Composable
+private fun OpeningThumbnail(start: androidx.compose.ui.geometry.Rect, end: androidx.compose.ui.geometry.Rect, progress: Float, image: ImageBitmap?) {
+    val density = LocalDensity.current
+    val x = lerp(start.left, end.left, progress)
+    val y = lerp(start.top, end.top, progress)
+    val w = lerp(start.width, end.width, progress).coerceAtLeast(1f)
+    val h = lerp(start.height, end.height, progress).coerceAtLeast(1f)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape((12f * (1f - progress)).dp)
+    Box(
+        Modifier.offset { IntOffset(x.toInt(), y.toInt()) }
+            .size(with(density) { w.toDp() }, with(density) { h.toDp() })
+            .graphicsLayer { alpha = ((1f - progress) / 0.28f).coerceIn(0f, 1f) }
+            .clip(shape).background(Color.White),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
     }
+}

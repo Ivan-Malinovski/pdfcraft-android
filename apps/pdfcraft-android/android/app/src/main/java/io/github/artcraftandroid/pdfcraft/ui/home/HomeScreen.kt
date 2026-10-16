@@ -357,7 +357,7 @@ fun FileListRow(vm: AppViewModel, r: FileRow, recent: Boolean = false) {
     Row(
         Modifier.fillMaxWidth()
             .background(if (ticked) c.toolAccent.copy(alpha = 0.12f) else Color.Transparent)
-            .combinedClickable(onClick = { if (selecting) vm.toggleSelected(r) else { vm.openThumbnailBounds = thumbBounds; r.open() } }, onLongClick = { vm.toggleSelected(r) })
+            .combinedClickable(onClick = { if (selecting) vm.toggleSelected(r) else { vm.openThumbnailBounds = thumbBounds; vm.openThumbnailPath = r.thumbPath; r.open() } }, onLongClick = { vm.toggleSelected(r) })
             .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -423,7 +423,7 @@ private fun SelectionBar(vm: AppViewModel, recent: Boolean, onDelete: () -> Unit
 private fun FileGridCell(vm: AppViewModel, r: FileRow, modifier: Modifier, recent: Boolean) {
     val c = pdfColors
     var thumbBounds by remember(r.key) { mutableStateOf<Rect?>(null) }
-    Column(modifier.clickable { vm.openThumbnailBounds = thumbBounds; r.open() }.padding(vertical = 8.dp)) {
+    Column(modifier.clickable { vm.openThumbnailBounds = thumbBounds; vm.openThumbnailPath = r.thumbPath; r.open() }.padding(vertical = 8.dp)) {
         Box(Modifier.fillMaxWidth().heightIn(min = 160.dp), contentAlignment = Alignment.Center) { Box(Modifier.onGloballyPositioned { thumbBounds = it.boundsInRoot() }) { FileThumb(vm, r.thumbPath, 120, 156) } }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
