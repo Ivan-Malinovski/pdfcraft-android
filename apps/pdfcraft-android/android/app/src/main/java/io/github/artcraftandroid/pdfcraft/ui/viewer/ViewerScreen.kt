@@ -114,7 +114,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     val topPx = with(density) { TopBubbleReserve.toPx() }
     // the quick toolbar grows with a large font setting: the page area leaves room for that too
     var quickExtraPx by remember { mutableIntStateOf(0) }
-    val bottomPx = with(density) { (if (ctl.tool == ViewerTool.None) QuickBarHeight.toPx() + quickExtraPx else BottomBarHeight.toPx()) + FloatEdge.toPx() }
+    val bottomPx = with(density) { (if (ctl.tool == ViewerTool.None) QuickBarHeight.toPx() + quickExtraPx else BottomBarHeight.toPx()) + FloatEdge.toPx() + BubbleInsetBottom.toPx() }
     // keyed on the document too: one opened over another (Create, Combine) has a fresh page view
     LaunchedEffect(doc, statusPx, navPx, topPx, ctl.searching, ctl.tool, vm.readingMode, bottomPx) {
         val bottomShown = !ctl.searching && !vm.readingMode
@@ -363,7 +363,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                 enter = slideInVertically(tween(PdfMotion.BARS_MS)) { it } + fadeIn(tween(PdfMotion.BARS_MS)),
                 exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { it } + fadeOut(tween(PdfMotion.BARS_MS)),
             ) {
-                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape)) {
+                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
                     if (ctl.tool == ViewerTool.None) {
                         QuickToolbar(
                             tools = vm.quickToolbar.bar,

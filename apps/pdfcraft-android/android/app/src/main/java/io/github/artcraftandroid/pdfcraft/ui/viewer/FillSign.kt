@@ -148,7 +148,7 @@ fun SignPanel(vm: AppViewModel, doc: OpenDocument, onDismiss: () -> Unit) {
     // read so the panel redraws when a saved signature is cleared or made
     val version = vm.signaturesChanged
     // over the Fill & Sign bar, which stays in view: two dashed boxes, Add signature and Add initials
-    PdfSheet(onDismiss = onDismiss, modifier = Modifier.padding(bottom = BottomBarHeight + FloatEdge + 6.dp).navigationBarsPadding(), bottomBand = false) {
+    PdfSheet(onDismiss = onDismiss, modifier = Modifier.padding(bottom = BottomBarHeight + FloatEdge + BubbleInsetBottom + 6.dp).navigationBarsPadding(), bottomBand = false) {
         Spacer(Modifier.height(7.dp))
         for (initials in listOf(false, true)) {
             val file = vm.signatures.fileFor(initials)
