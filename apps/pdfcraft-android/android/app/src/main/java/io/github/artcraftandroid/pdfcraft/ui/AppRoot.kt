@@ -1,5 +1,8 @@
 package io.github.artcraftandroid.pdfcraft.ui
 
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -35,6 +38,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +66,7 @@ import io.github.artcraftandroid.pdfcraft.ui.home.HomeRoot
 import io.github.artcraftandroid.pdfcraft.ui.home.SettingsScreen
 import io.github.artcraftandroid.pdfcraft.ui.viewer.SignaturePadScreen
 import io.github.artcraftandroid.pdfcraft.ui.viewer.ViewerScreen
+import kotlinx.coroutines.launch
 
 /** Home or the viewer, and everything that can come over them: tools, settings, dialogs, snackbars. */
 @Composable
@@ -88,7 +95,42 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         }
     }
     // Back in the viewer closes the document (saving it) and returns to Home
-    androidx.activity.compose.BackHandler(enabled = doc != null && vm.toolScreen == null) { vm.closeDocument() }
+    // (predictive: the page shrinks into a card as the gesture is made, springs back if it is let go,
+    // and when it is committed carries on shrinking and fading to reveal Home rather than cutting to it)
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    var backExit by remember { mutableFloatStateOf(0f) }
+    var backEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = doc != null && vm.toolScreen == null) { events ->
+        try {
+            events.collect { backProgress = it.progress; backEdge = it.swipeEdge }
+            kotlinx.coroutines.coroutineScope {
+                launch {
+                    androidx.compose.animation.core.animate(backProgress, 1f, animationSpec = tween(PdfMotion.BACK_COMMIT_MS, easing = FastOutSlowInEasing)) { v, _ -> backProgress = v }
+                }
+                androidx.compose.animation.core.animate(backExit, 1f, animationSpec = tween(PdfMotion.BACK_COMMIT_MS, easing = FastOutLinearInEasing)) { v, _ -> backExit = v }
+            }
+            vm.closeDocument()
+            // the document is released on the next frame or two; if it stays (the read-only prompt), bring the page back
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            if (vm.document != null) {
+                kotlinx.coroutines.coroutineScope {
+                    launch { androidx.compose.animation.core.animate(backProgress, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backProgress = v } }
+                    androidx.compose.animation.core.animate(backExit, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backExit = v }
+                }
+            } else {
+                backProgress = 0f
+                backExit = 0f
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                kotlinx.coroutines.coroutineScope {
+                    launch { androidx.compose.animation.core.animate(backProgress, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backProgress = v } }
+                    androidx.compose.animation.core.animate(backExit, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backExit = v }
+                }
+            }
+            throw e
+        }
+    }
     // what floats above Home or the viewer (sheets, the snackbar, the viewer's bars) frosts the screen below it
     val glass = rememberGlassSource()
     androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
@@ -100,7 +142,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
             .background(c.surface),
     ) {
         when {
-            doc != null -> ViewerScreen(vm, doc)
+            doc != null -> Box(Modifier.fillMaxSize().predictiveBack(backProgress, backExit, backEdge)) { ViewerScreen(vm, doc) }
             else -> Box(Modifier.fillMaxSize().glassSource(glass)) { HomeRoot(vm, onBrowse) }
         }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
@@ -219,4 +261,16 @@ private fun LicencesScreen(vm: AppViewModel) {
             Spacer(Modifier.height(32.dp))
         }
     }
+}
+
+/** The page-shrinking look of a back gesture on the viewer: it pulls in toward the side the gesture started from, rounding its corners. */
+private fun Modifier.predictiveBack(progress: Float, exit: Float, edge: Int): Modifier = if (progress <= 0f && exit <= 0f) this else graphicsLayer {
+    val k = 1f - 0.1f * progress - 0.06f * exit
+    scaleX = k
+    scaleY = k
+    alpha = 1f - exit
+    val dir = if (edge == androidx.activity.BackEventCompat.EDGE_RIGHT) -1f else 1f
+    translationX = dir * progress * 16.dp.toPx()
+    shape = androidx.compose.foundation.shape.RoundedCornerShape((28f * progress).dp)
+    clip = true
 }

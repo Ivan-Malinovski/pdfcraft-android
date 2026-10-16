@@ -155,6 +155,15 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             ctl.lastMoved = SystemClock.uptimeMillis()
         }
     }
+    // a light tick as a page is reached in single-page mode (a swipe or the scrubber), as a detent
+    val haptics = io.github.artcraftandroid.pdfcraft.ui.rememberHaptics()
+    LaunchedEffect(doc) {
+        var last = doc.viewer.currentPage
+        snapshotFlow { doc.viewer.currentPage }.collect {
+            if (it != last && doc.viewer.mode == PageMode.SinglePage) haptics.tick()
+            last = it
+        }
+    }
     var indicatorVisible by remember { mutableStateOf(false) }
     LaunchedEffect(ctl.lastMoved) {
         if (ctl.lastMoved == 0L) return@LaunchedEffect
@@ -321,8 +330,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             Spacer(Modifier.fillMaxWidth().height(with(density) { statusPx.toDp() }))
             AnimatedVisibility(
                 ctl.barsVisible,
-                enter = slideInVertically(tween(PdfMotion.BARS_MS)) { -it } + fadeIn(tween(PdfMotion.BARS_MS)),
-                exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { -it } + fadeOut(tween(PdfMotion.BARS_MS)),
+                enter = slideInVertically(PdfMotion.barsIn()) { -it } + fadeIn(tween(PdfMotion.BARS_FADE_MS)),
+                exit = slideOutVertically(PdfMotion.barsOut()) { -it } + fadeOut(tween(PdfMotion.BARS_FADE_MS)),
             ) {
               Box(Modifier.fillMaxWidth().padding(start = FloatSide, end = FloatSide, top = FloatEdge)) {
                 if (ctl.searching) {
@@ -380,8 +389,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             vm.success?.let { SuccessBannerView(it, onClose = { vm.success = null }) }
             AnimatedVisibility(
                 ctl.barsVisible && !ctl.searching && !vm.readingMode,
-                enter = slideInVertically(tween(PdfMotion.BARS_MS)) { it } + fadeIn(tween(PdfMotion.BARS_MS)),
-                exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { it } + fadeOut(tween(PdfMotion.BARS_MS)),
+                enter = slideInVertically(PdfMotion.barsIn()) { it } + fadeIn(tween(PdfMotion.BARS_FADE_MS)),
+                exit = slideOutVertically(PdfMotion.barsOut()) { it } + fadeOut(tween(PdfMotion.BARS_FADE_MS)),
             ) {
                 Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Bubble).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
                     if (ctl.tool == ViewerTool.None) {

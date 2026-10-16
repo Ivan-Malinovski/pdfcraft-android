@@ -3,10 +3,12 @@ package io.github.artcraftandroid.pdfcraft.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -14,7 +16,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -54,10 +58,16 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Arrangement
@@ -70,7 +80,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -89,7 +104,28 @@ import kotlinx.coroutines.launch
 object PdfMotion {
     const val SHEET_IN_MS = 250
     const val SHEET_OUT_MS = 200
-    const val BARS_MS = 300
+    const val BARS_FADE_MS = 220
+
+    /** A committed back gesture carries on shrinking and fading the page for this long before Home is all that is left. */
+    const val BACK_COMMIT_MS = 240
+
+    /** A pulled sheet closes when dragged this fraction of its height down, or flung faster than [SHEET_DISMISS_VELOCITY] px/s. */
+    const val SHEET_DISMISS_FRACTION = 0.25f
+    const val SHEET_DISMISS_VELOCITY = 1200f
+
+    /** Leaves at speed (already moving when the exit starts), then settles: for a sheet let go mid-pull. */
+    val PullOutEasing = androidx.compose.animation.core.CubicBezierEasing(0.25f, 0.6f, 0.4f, 1f)
+
+    /** Bars and sheets move on springs: they carry the speed of a gesture and settle without a fixed duration. */
+    fun <T> barsIn(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)
+    fun <T> barsOut(): FiniteAnimationSpec<T> = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+    fun <T> sheetIn(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)
+
+    /** The settle of a dragged sheet that was let go short of closing. */
+    fun <T> snapBack(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium)
+
+    /** Zoom easing in or out (a double tap, the fit back). */
+    fun <T> zoom(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.9f, stiffness = 380f)
 }
 
 /** An icon button of the bars: a 46 dp target with a 24 dp icon, a pressed background when [selected]. */
@@ -172,18 +208,109 @@ fun PdfSheet(
 ) {
     val own = remember { MutableTransitionState(false) }
     LaunchedEffect(own) { own.targetState = true }
-    val visible = LocalSheetVisible.current ?: own
-    BackHandler(enabled = visible.targetState, onBack = onDismiss)
+    val hosted = LocalSheetVisible.current
+    val visible = hosted ?: own
     val scope = rememberCoroutineScope()
     var drag by remember { mutableFloatStateOf(0f) }
     var height by remember { mutableIntStateOf(0) }
+    // set when a pull closes the sheet: it then leaves from where the finger let go, not from rest
+    var pulledOut by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
+    var snap by remember { mutableStateOf<Job?>(null) }
+    val settleDrag: (Float) -> Unit = { velocity ->
+        snap?.cancel()
+        snap = scope.launch { animate(drag, 0f, initialVelocity = velocity.coerceAtMost(0f), animationSpec = PdfMotion.snapBack()) { v, _ -> drag = v } }
+    }
+    // Every way of closing (scrim, Back, a pull) ends here. A sheet outside a SheetHost has no host to
+    // keep it composed while it leaves, so it runs its own exit first. A caller that keeps the sheet
+    // (Customize toolbar's Back only leaves that panel) gets it back, not left half-way off the screen.
+    val dismiss: (Boolean) -> Unit = { pulled ->
+        if (!closing && visible.targetState) {
+            closing = true
+            snap?.cancel()
+            pulledOut = pulled
+            scope.launch {
+                if (hosted == null) {
+                    own.targetState = false
+                    snapshotFlow { own.currentState }.first { !it }
+                }
+                onDismiss()
+                // the sheet is disposed (or its host starts the exit) within a frame or two when it is really closing
+                repeat(2) { withFrameNanos { } }
+                if (hosted == null) own.targetState = true
+                if (visible.targetState) {
+                    closing = false
+                    pulledOut = false
+                    if (drag > 0f) settleDrag(0f)
+                }
+            }
+        }
+    }
+    val dismissNow by rememberUpdatedState({ dismiss(false) })
+    // the back gesture shrinks the sheet toward the bottom edge as it is made; a cancelled one lets it spring back
+    var back by remember { mutableFloatStateOf(0f) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = visible.targetState) { events ->
+        try {
+            events.collect { back = it.progress }
+            dismissNow()
+        } finally {
+            // on commit the sheet is closing anyway: reset once it has gone
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                animate(back, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> back = v }
+            }
+        }
+    }
+    // brought back while it was leaving (the host's key returned): settle at rest
+    LaunchedEffect(visible.targetState) {
+        if (visible.targetState && (drag > 0f || pulledOut || closing)) {
+            closing = false
+            pulledOut = false
+            if (drag > 0f) settleDrag(0f)
+        }
+    }
+    val release: (Float) -> Unit = { velocity ->
+        if (drag > 0f && (drag > height * PdfMotion.SHEET_DISMISS_FRACTION || velocity > PdfMotion.SHEET_DISMISS_VELOCITY)) {
+            // the sheet carries on from the finger's position: no snap back first, the exit owns the rest of the travel
+            dismiss(true)
+        } else if (drag > 0f) {
+            settleDrag(velocity)
+        }
+    }
+    val releaseNow by rememberUpdatedState(release)
+    // a scrolling sheet hands a pull past its top to the sheet, as a modal bottom sheet does
+    val pull = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (drag <= 0f || available.y >= 0f) return Offset.Zero
+                snap?.cancel()
+                val take = maxOf(available.y, -drag)
+                drag += take
+                return Offset(0f, take)
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+                snap?.cancel()
+                drag += available.y
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (drag <= 0f) return Velocity.Zero
+                releaseNow(available.y)
+                return available
+            }
+        }
+    }
+    val dragState = rememberDraggableState { dy -> snap?.cancel(); drag = (drag + dy).coerceAtLeast(0f) }
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible, enter = fadeIn(tween(PdfMotion.SHEET_IN_MS)), exit = fadeOut(tween(PdfMotion.SHEET_OUT_MS))) {
             Box(
                 Modifier
                     .fillMaxSize()
+                    .graphicsLayer { alpha = 1f - (drag / height.coerceAtLeast(1)).coerceIn(0f, 1f) }
                     .background(if (dim) pdfColors.scrim else Color.Transparent)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { dismissNow() }
                     .semantics { contentDescription = "Close sheet" },
             )
         }
@@ -196,8 +323,13 @@ fun PdfSheet(
             AnimatedVisibility(
                 visible,
                 modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(tween(PdfMotion.SHEET_IN_MS, easing = LinearOutSlowInEasing)) { it },
-                exit = slideOutVertically(tween(PdfMotion.SHEET_OUT_MS, easing = FastOutLinearInEasing)) { it },
+                enter = slideInVertically(PdfMotion.sheetIn()) { it },
+                exit = if (pulledOut) {
+                    // already moving when it starts: leaves with the speed of the pull, easing out at the end
+                    slideOutVertically(tween(PdfMotion.SHEET_OUT_MS, easing = PdfMotion.PullOutEasing)) { (it - drag).roundToInt().coerceAtLeast(0) }
+                } else {
+                    slideOutVertically(tween(PdfMotion.SHEET_OUT_MS, easing = FastOutLinearInEasing)) { it }
+                },
             ) {
                 Column(
                     modifier
@@ -207,7 +339,14 @@ fun PdfSheet(
                         .heightIn(max = maxH)
                         .offset { IntOffset(0, drag.roundToInt()) }
                         .onSizeChanged { height = it.height }
+                        .graphicsLayer {
+                            val k = 1f - 0.08f * back
+                            scaleX = k
+                            scaleY = k
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        }
                         .floatingSurface(PdfShapes.Large, tint = background ?: pdfColors.surface, alpha = GLASS_PANEL_ALPHA)
+                        .nestedScroll(pull)
                         .pointerInput(Unit) { detectTapGestures() },
                 ) {
                     // the handle: drag it (or the sheet's top) down to close
@@ -215,19 +354,7 @@ fun PdfSheet(
                         Modifier
                             .fillMaxWidth()
                             .height(handleHeight)
-                            .pointerInput(Unit) {
-                                detectVerticalDragGestures(
-                                    onDragEnd = {
-                                        scope.launch {
-                                            if (drag > height / 4f) {
-                                                onDismiss()
-                                            }
-                                            animate(drag, 0f, animationSpec = tween(150)) { v, _ -> drag = v }
-                                        }
-                                    },
-                                    onVerticalDrag = { _, dy -> drag = (drag + dy).coerceAtLeast(0f) },
-                                )
-                            },
+                            .draggable(dragState, Orientation.Vertical, onDragStopped = { release(it) }),
                         contentAlignment = if (handleHeight < 24.dp) Alignment.TopCenter else Alignment.Center,
                     ) {
                         // 8 dp down in a short strip, as the comment panel has it
@@ -335,6 +462,7 @@ fun BoxScope.HintToast(text: String?, modifier: Modifier = Modifier, alignment: 
 @Composable
 fun PdfSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val c = pdfColors
+    val haptics = rememberHaptics()
     val track = if (checked) c.accent else if (c.dark) Color(0xFF959595) else Color(0xFFB0B0B0)
     Box(
         modifier
@@ -342,7 +470,7 @@ fun PdfSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier 
             .clip(CircleShape)
             .background(if (checked) track else Color.Transparent)
             .then(if (checked) Modifier else Modifier.background(Color.Transparent))
-            .clickable(role = Role.Switch) { onChange(!checked) },
+            .clickable(role = Role.Switch) { haptics.toggle(!checked); onChange(!checked) },
     ) {
         if (!checked) {
             Box(Modifier.fillMaxSize().clip(CircleShape).background(track.copy(alpha = 0.0f)))
