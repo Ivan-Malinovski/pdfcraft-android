@@ -123,7 +123,7 @@ fun EditToolbar(vm: AppViewModel, doc: OpenDocument) {
 private fun EditToolsBar(vm: AppViewModel, doc: OpenDocument) {
     Row(
         // taller when a large font setting enlarges the labels, rather than cutting them off
-        Modifier.fillMaxWidth().heightIn(min = BottomBarHeight).barTopLine(),
+        Modifier.heightIn(min = ToolBarContentHeight),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -153,7 +153,7 @@ private fun BarDividerLine() {
 private fun EditBarItem(icon: ImageVector, label: String, selected: Boolean, width: Dp, onClick: () -> Unit) {
     val c = pdfColors
     Column(
-        Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label },
+        Modifier.width(width).heightIn(min = ToolBarContentHeight).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -170,7 +170,7 @@ private fun EditFormatBar(vm: AppViewModel, doc: OpenDocument, para: Paragraph) 
     fun toggle(p: FormatPanel) {
         panel = if (panel == p) FormatPanel.None else p
     }
-    Column(Modifier.fillMaxWidth()) {
+    Column {
         when (panel) {
             FormatPanel.Size -> SizePanel(para) { vm.styleParagraph(doc, para, mapOf("size" to it.toDouble())) }
             FormatPanel.Font -> FontPanel(vm.editFont[para.page to para.number]) { f ->
@@ -186,7 +186,7 @@ private fun EditFormatBar(vm: AppViewModel, doc: OpenDocument, para: Paragraph) 
             FormatPanel.None -> Unit
         }
         Row(
-            Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine(),
+            Modifier.height(ToolBarContentHeight),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {

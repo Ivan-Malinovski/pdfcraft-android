@@ -85,6 +85,9 @@ val TopBarHeight = 57.dp
 /** The bottom quick toolbar's height (the reference's: 70 dp). */
 val BottomBarHeight = 70.dp
 
+/** A tool's bar inside its bubble: the bubble's own top inset (see [BubbleInsetBottom]) comes out of the usual height, so the buttons sit centred. */
+val ToolBarContentHeight: Dp get() = BottomBarHeight - BubbleInsetBottom
+
 /** The bars float over the pages as bubbles: this far in from the screen's sides. */
 val FloatSide = 12.dp
 
@@ -192,14 +195,18 @@ fun ViewerTopBar(
             }
         }
     }
-    // a tool with its own title keeps one pill: Done, the title and Undo
+    // a tool with its own title: Done and the title in one pill, Undo in another, each only as wide as its content
     if (title != null) {
-        Row(Modifier.fillMaxWidth().height(TopBarHeight).floatingSurface(), verticalAlignment = Alignment.CenterVertically) {
-            back()
-            Spacer(Modifier.width(6.dp))
-            Text(title, color = c.label, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            UndoMenuButton(canUndo, canRedo, onUndo, onRedo, undoLabel, redoLabel)
-            Spacer(Modifier.width(10.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.height(TopBarHeight).floatingSurface(), verticalAlignment = Alignment.CenterVertically) {
+                back()
+                Text(title, color = c.label, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Spacer(Modifier.width(20.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Row(Modifier.height(TopBarHeight).floatingSurface().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                UndoMenuButton(canUndo, canRedo, onUndo, onRedo, undoLabel, redoLabel)
+            }
         }
         return
     }
@@ -446,7 +453,7 @@ fun QuickToolbar(
                 horizontalArrangement = Arrangement.Center,
             ) {
                 for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = itemW)
-                QuickItem(LucideIcons.LayoutGrid, "More tools", onMoreTools, selected = moreToolsOpen, width = itemW)
+                QuickItem(LucideIcons.LayoutGrid, "More", onMoreTools, selected = moreToolsOpen, width = itemW)
             }
         }
     }
@@ -488,13 +495,10 @@ fun Modifier.barTopLine(): Modifier {
 @Composable
 fun SubToolbar(content: @Composable () -> Unit) {
     val scroll = androidx.compose.foundation.rememberScrollState()
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(BottomBarHeight).barTopLine()) {
-        Row(
-            Modifier.fillMaxHeight().horizontalScroll(scroll).widthIn(min = maxWidth),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) { androidx.compose.runtime.CompositionLocalProvider(LocalSubToolbarScroll provides scroll) { content() } }
-    }
+    Row(
+        Modifier.height(ToolBarContentHeight).horizontalScroll(scroll),
+        verticalAlignment = Alignment.CenterVertically,
+    ) { androidx.compose.runtime.CompositionLocalProvider(LocalSubToolbarScroll provides scroll) { content() } }
 }
 
 /** The scrolling bar a sub-toolbar tool sits in (none outside one). */
