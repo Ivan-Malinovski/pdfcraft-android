@@ -41,6 +41,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.util.lerp
 import androidx.compose.runtime.getValue
@@ -64,6 +66,7 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -113,7 +116,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
                 }
                 if (laidOut != null) {
                     androidx.compose.runtime.withFrameNanos { }
-                    openProgress.animateTo(1f, tween(durationMillis = 340))
+                    openProgress.animateTo(1f, tween(PdfMotion.OPEN_MS, easing = PdfMotion.OpenEasing))
                 } else openProgress.snapTo(1f)
             }
             vm.openThumbnailBounds = null
@@ -138,18 +141,38 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         }
     }
     // Back in the viewer closes the document (saving it) and returns to Home
-    // (predictive: the page shrinks into a card as the gesture is made, and springs back if it is let go)
+    // (predictive: the page shrinks into a card as the gesture is made, springs back if it is let go,
+    // and when it is committed carries on shrinking and fading to reveal Home rather than cutting to it)
     var backProgress by remember { mutableFloatStateOf(0f) }
+    var backExit by remember { mutableFloatStateOf(0f) }
     var backEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
     androidx.activity.compose.PredictiveBackHandler(enabled = doc != null && vm.toolScreen == null) { events ->
         try {
             events.collect { backProgress = it.progress; backEdge = it.swipeEdge }
-            androidx.compose.animation.core.animate(backProgress, 1f, animationSpec = androidx.compose.animation.core.tween(120)) { v, _ -> backProgress = v }
+            kotlinx.coroutines.coroutineScope {
+                launch {
+                    androidx.compose.animation.core.animate(backProgress, 1f, animationSpec = tween(PdfMotion.BACK_COMMIT_MS, easing = FastOutSlowInEasing)) { v, _ -> backProgress = v }
+                }
+                androidx.compose.animation.core.animate(backExit, 1f, animationSpec = tween(PdfMotion.BACK_COMMIT_MS, easing = FastOutLinearInEasing)) { v, _ -> backExit = v }
+            }
             vm.closeDocument()
-            backProgress = 0f
+            // the document is released on the next frame or two; if it stays (the read-only prompt), bring the page back
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            if (vm.document != null) {
+                kotlinx.coroutines.coroutineScope {
+                    launch { androidx.compose.animation.core.animate(backProgress, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backProgress = v } }
+                    androidx.compose.animation.core.animate(backExit, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backExit = v }
+                }
+            } else {
+                backProgress = 0f
+                backExit = 0f
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                androidx.compose.animation.core.animate(backProgress, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backProgress = v }
+                kotlinx.coroutines.coroutineScope {
+                    launch { androidx.compose.animation.core.animate(backProgress, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backProgress = v } }
+                    androidx.compose.animation.core.animate(backExit, 0f, animationSpec = PdfMotion.snapBack()) { v, _ -> backExit = v }
+                }
             }
             throw e
         }
@@ -174,7 +197,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
             ) { HomeRoot(vm, onBrowse) }
         }
         if (doc != null) Box(
-            Modifier.fillMaxSize().graphicsLayer { alpha = if (openBounds == null) 1f else ((openProgress.value - 0.72f) / 0.28f).coerceIn(0f, 1f) }.predictiveBack(backProgress, backEdge),
+            Modifier.fillMaxSize().graphicsLayer { alpha = if (openBounds == null) 1f else ((openProgress.value - OPEN_HANDOFF) / (1f - OPEN_HANDOFF)).coerceIn(0f, 1f) }.predictiveBack(backProgress, backExit, backEdge),
         ) { ViewerScreen(vm, doc) }
         if (doc != null && openBounds != null && openProgress.value < 1f && doc.viewer.viewW > 0f) {
             val page = doc.viewer.currentPage
@@ -299,15 +322,19 @@ private fun LicencesScreen(vm: AppViewModel) {
 }
 
 /** The page-shrinking look of a back gesture on the viewer: it pulls in toward the side the gesture started from, rounding its corners. */
-private fun Modifier.predictiveBack(progress: Float, edge: Int): Modifier = if (progress <= 0f) this else graphicsLayer {
-    val k = 1f - 0.1f * progress
+private fun Modifier.predictiveBack(progress: Float, exit: Float, edge: Int): Modifier = if (progress <= 0f && exit <= 0f) this else graphicsLayer {
+    val k = 1f - 0.1f * progress - 0.06f * exit
     scaleX = k
     scaleY = k
+    alpha = 1f - exit
     val dir = if (edge == androidx.activity.BackEventCompat.EDGE_RIGHT) -1f else 1f
     translationX = dir * progress * 16.dp.toPx()
     shape = androidx.compose.foundation.shape.RoundedCornerShape((28f * progress).dp)
     clip = true
 }
+
+/** How far the opening thumbnail has travelled when the real page starts to take over: only once it has all but settled. */
+private const val OPEN_HANDOFF = 0.96f
 
 /** Carry the file thumbnail into the visible page rectangle, then hand it to the canvas. */
 @Composable
@@ -321,7 +348,7 @@ private fun OpeningThumbnail(start: androidx.compose.ui.geometry.Rect, end: andr
     Box(
         Modifier.offset { IntOffset(x.toInt(), y.toInt()) }
             .size(with(density) { w.toDp() }, with(density) { h.toDp() })
-            .graphicsLayer { alpha = ((1f - progress) / 0.28f).coerceIn(0f, 1f) }
+            .graphicsLayer { alpha = ((1f - progress) / (1f - OPEN_HANDOFF)).coerceIn(0f, 1f) }
             .clip(shape).background(Color.White),
         contentAlignment = Alignment.Center,
     ) {
