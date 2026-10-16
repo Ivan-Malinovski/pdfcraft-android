@@ -108,7 +108,8 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         if (vm.showLicences) LicencesScreen(vm)
 
         if (vm.opening) CircularProgressIndicator(Modifier.align(Alignment.Center), color = c.accent)
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 72.dp, start = 8.dp, end = 8.dp))
+        // clear of the viewer's floating bottom bubble as well as the home tab bar
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp, start = 8.dp, end = 8.dp))
 
         vm.passwordRequest?.let { PasswordDialog(vm, it) }
         if (vm.authorPrompt) {
