@@ -356,7 +356,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         }
         // the Read Aloud player takes the bottom bar's place
         // while typing on the page, the bar (with its formatting) rides above the keyboard
-        if (vm.readAloud == null && vm.fieldActions == null) Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).then(if (vm.editing != null) Modifier.imePadding() else Modifier)) {
+        if (vm.readAloud == null && vm.fieldActions == null) Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).then(if (vm.editing != null) Modifier.imePadding() else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
             vm.success?.let { SuccessBannerView(it, onClose = { vm.success = null }) }
             AnimatedVisibility(
                 ctl.barsVisible && !ctl.searching && !vm.readingMode,
@@ -379,7 +379,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                             onExtraHeight = { quickExtraPx = it },
                         )
                     } else {
-                        ToolSubToolbar(vm, doc)
+                        Box(Modifier.padding(top = BubbleInsetBottom)) { ToolSubToolbar(vm, doc) }
                     }
                 }
             }

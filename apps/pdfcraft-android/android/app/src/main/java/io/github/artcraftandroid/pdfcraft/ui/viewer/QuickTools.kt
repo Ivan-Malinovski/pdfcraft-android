@@ -291,7 +291,7 @@ private fun BarTool(tool: QuickTool?, width: androidx.compose.ui.unit.Dp) {
         Icon(tool?.icon ?: LucideIcons.LayoutGrid, null, tint = c.icon, modifier = Modifier.size(24.dp))
         Spacer(Modifier.height(6.dp))
         Text(
-            tool?.label ?: "More tools", color = c.text, fontSize = 12.sp, lineHeight = 14.sp, maxLines = 2,
+            tool?.label ?: "More", color = c.text, fontSize = 12.sp, lineHeight = 14.sp, maxLines = 2,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, textAlign = TextAlign.Center,
         )
     }
