@@ -337,6 +337,9 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
 /** The strip above the quick toolbar's tools that holds its handle. */
 val QuickHandleHeight = 22.dp
 
+/** The handle's touch target: wide enough to hit, narrower than the smallest bar (More alone). */
+private val QuickHandleWidth = 72.dp
+
 /** The quick toolbar's height with its handle, the shortcuts folded away. */
 val QuickBarHeight = BottomBarHeight + QuickHandleHeight
 
@@ -360,12 +363,14 @@ fun QuickToolbar(
 ) {
     val c = pdfColors
     var open by remember { androidx.compose.runtime.mutableStateOf(false) }
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+    // the bubble is as wide as the tools in it (fewer pinned shortcuts, a narrower pill); the shortcut chips follow that width
+    var toolsWidthPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    androidx.compose.foundation.layout.BoxWithConstraints {
         val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
         val shown = tools.take(slots)
         val itemW = minOf(72.dp, (maxWidth - 4.dp) / maxOf(7, shown.size + 1))
         Column(
-            Modifier.fillMaxWidth().pointerInput(chips.isNotEmpty()) {
+            Modifier.pointerInput(chips.isNotEmpty()) {
                 if (chips.isEmpty()) return@pointerInput
                 var pulled = 0f
                 detectVerticalDragGestures(
@@ -375,7 +380,7 @@ fun QuickToolbar(
             },
         ) {
             Box(
-                Modifier.fillMaxWidth().height(QuickHandleHeight)
+                Modifier.align(Alignment.CenterHorizontally).width(QuickHandleWidth).height(QuickHandleHeight)
                     .clickable(enabled = chips.isNotEmpty(), role = Role.Button) { open = !open }
                     .semantics { contentDescription = if (open) "Hide shortcuts" else "Show shortcuts" },
                 contentAlignment = Alignment.TopCenter,
@@ -386,15 +391,16 @@ fun QuickToolbar(
             }
             androidx.compose.animation.AnimatedVisibility(open && chips.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                    Modifier.then(if (toolsWidthPx > 0) Modifier.width(with(androidx.compose.ui.platform.LocalDensity.current) { toolsWidthPx.toDp() }) else Modifier.fillMaxWidth())
+                        .horizontalScroll(androidx.compose.foundation.rememberScrollState())
                         .padding(start = 18.dp, end = 18.dp, top = 5.dp, bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                 ) { for (chip in chips) QuickChipView(chip) }
             }
             val usual = with(androidx.compose.ui.platform.LocalDensity.current) { BottomBarHeight.roundToPx() }
             Row(
-                Modifier.fillMaxWidth().heightIn(min = BottomBarHeight)
-                    .onSizeChanged { onExtraHeight((it.height - usual).coerceAtLeast(0)) },
+                Modifier.heightIn(min = BottomBarHeight)
+                    .onSizeChanged { toolsWidthPx = it.width; onExtraHeight((it.height - usual).coerceAtLeast(0)) },
                 horizontalArrangement = Arrangement.Center,
             ) {
                 for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = itemW)
