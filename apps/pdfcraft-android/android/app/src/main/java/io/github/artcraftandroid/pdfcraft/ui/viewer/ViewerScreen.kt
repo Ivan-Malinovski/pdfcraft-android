@@ -269,6 +269,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             Unit
         } else if (doc.pageCount >= 3 && doc.viewer.mode == PageMode.SinglePage) {
             HorizontalScrubber(
+                vm = vm,
                 doc = doc,
                 visible = indicatorVisible && !ctl.searching,
                 bottom = with(density) { doc.viewer.padBottom.toDp() },
@@ -277,6 +278,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             )
         } else if (doc.pageCount >= 3) {
             Scrubber(
+                vm = vm,
                 doc = doc,
                 visible = indicatorVisible && !ctl.searching,
                 top = with(density) { (doc.viewer.padTop).toDp() },
