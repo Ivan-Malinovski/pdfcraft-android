@@ -109,7 +109,7 @@ fun BarIcon(
     Box(
         modifier
             .size(size)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(PdfShapes.Small)
             .background(if (selected) pdfColors.pressed else Color.Transparent)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
@@ -401,7 +401,7 @@ fun PdfDialog(
         androidx.compose.runtime.SideEffect { window?.setDimAmount(0.6f) }
         Box(Modifier.fillMaxWidth().padding(horizontal = if (list) 68.dp else 51.dp), contentAlignment = Alignment.Center) {
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(if (list) (if (c.dark) Color(0xFF424242) else Color.White) else c.surface)
+                Modifier.fillMaxWidth().clip(PdfShapes.Large).background(if (list) (if (c.dark) Color(0xFF424242) else Color.White) else c.surface)
                     .padding(if (list) PaddingValues(vertical = 8.dp) else PaddingValues(24.dp)),
             ) {
                 if (title != null) {
@@ -426,8 +426,8 @@ private fun DialogPill(label: String, filled: Boolean, enabled: Boolean, red: Bo
     val c = pdfColors
     val fill = if (red) c.red else Color(0xFF1473E6)
     Box(
-        Modifier.heightIn(min = 42.dp).widthIn(min = 88.dp).clip(RoundedCornerShape(21.dp))
-            .then(if (filled) Modifier.background(if (enabled) fill else c.pressed) else Modifier.border(2.dp, c.textSecondary, RoundedCornerShape(21.dp)))
+        Modifier.heightIn(min = 42.dp).widthIn(min = 88.dp).clip(PdfShapes.Pill)
+            .then(if (filled) Modifier.background(if (enabled) fill else c.pressed) else Modifier.border(2.dp, c.textSecondary, PdfShapes.Pill))
             .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -452,8 +452,8 @@ fun PdfField(
     var focused by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     Row(
-        modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(4.dp))
-            .border(if (focused || error) 2.dp else 1.dp, if (error) c.red else if (focused) Color(0xFF378EF0) else c.textSecondary, RoundedCornerShape(4.dp))
+        modifier.fillMaxWidth().height(48.dp).clip(PdfShapes.Small)
+            .border(if (focused || error) 2.dp else 1.dp, if (error) c.red else if (focused) Color(0xFF378EF0) else c.textSecondary, PdfShapes.Small)
             .padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

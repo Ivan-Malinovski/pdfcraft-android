@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -207,8 +208,8 @@ fun BoxScope.SelectionMenu(vm: AppViewModel, doc: OpenDocument, sel: Selection) 
             .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
             .onSizeChanged { menuSize = it }
             .width(209.dp)
-            .shadow(6.dp, RoundedCornerShape(4.dp))
-            .background(c.menu, RoundedCornerShape(4.dp)),
+            .shadow(6.dp, PdfShapes.Medium)
+            .background(c.menu, PdfShapes.Medium),
     ) {
         Row(Modifier.fillMaxWidth().height(61.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             MenuIcon(LucideIcons.MessageSquarePlus, "Add comment", allowed) { vm.notePrompt = NotePrompt(doc, null, sel) }

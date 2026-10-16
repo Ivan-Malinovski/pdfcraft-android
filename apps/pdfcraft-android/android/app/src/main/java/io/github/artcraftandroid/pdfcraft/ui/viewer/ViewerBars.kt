@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.foundation.background
 import android.os.Build
 import androidx.compose.runtime.Stable
@@ -374,7 +375,7 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) c.divider else Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)),
+            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) c.divider else Color.Transparent, PdfShapes.Small),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, null, tint = c.icon, modifier = Modifier.size(24.dp))
@@ -577,7 +578,7 @@ private fun SubButton(icon: ImageVector, description: String, selected: Boolean,
         Modifier.width(width).height(54.dp).slideToWhenChosen(selected && !shaded).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        if (shaded && selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, androidx.compose.foundation.shape.RoundedCornerShape(5.dp)))
+        if (shaded && selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, PdfShapes.Small))
         Icon(icon, null, tint = if (enabled) tint else tint.copy(alpha = 0.38f), modifier = Modifier.size(24.dp))
     }
 }
@@ -596,7 +597,7 @@ fun ColorDot(color: androidx.compose.ui.graphics.Color, selected: Boolean, onCli
         Modifier.width(36.dp).height(54.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = "Colour" },
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, androidx.compose.foundation.shape.RoundedCornerShape(5.dp)))
+        if (selected) Box(Modifier.requiredSize(40.dp).background(c.pressed, PdfShapes.Small))
         Box(Modifier.size(20.dp).background(color, androidx.compose.foundation.shape.CircleShape))
     }
 }

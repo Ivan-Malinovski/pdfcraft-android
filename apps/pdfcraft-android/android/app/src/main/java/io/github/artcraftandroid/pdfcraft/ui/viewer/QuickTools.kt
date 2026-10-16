@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import android.content.Context
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -247,7 +248,7 @@ fun CustomizeToolbar(vm: AppViewModel, onDone: () -> Unit) {
             )
             Text("Toolbar", color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp))
             BoxWithConstraints(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp)).background(c.pressed)
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(PdfShapes.Small).background(c.pressed)
                     .onGloballyPositioned { barRect = it.boundsInRoot() },
             ) {
                 val itemW = minOf(72.dp, (maxWidth - 8.dp) / (slots + 1))
@@ -276,7 +277,7 @@ fun CustomizeToolbar(vm: AppViewModel, onDone: () -> Unit) {
             val half = with(LocalDensity.current) { 36.dp.toPx() }
             Box(
                 Modifier.offset { IntOffset((dragPos.x - origin.x - half).roundToInt(), (dragPos.y - origin.y - half).roundToInt()) }
-                    .shadow(6.dp, RoundedCornerShape(8.dp)).background(c.surface, RoundedCornerShape(8.dp)),
+                    .shadow(6.dp, PdfShapes.Medium).background(c.surface, PdfShapes.Medium),
             ) { BarTool(t, 72.dp) }
         }
     }
@@ -302,7 +303,7 @@ private fun BarTool(tool: QuickTool?, width: androidx.compose.ui.unit.Dp) {
 private fun GridTool(tool: QuickTool) {
     val c = pdfColors
     Column(Modifier.width(80.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)).background(tileBackground(tool.hue, c.dark)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp).clip(PdfShapes.Small).background(tileBackground(tool.hue, c.dark)), contentAlignment = Alignment.Center) {
             Icon(tool.icon, null, tint = tool.hue, modifier = Modifier.size(26.dp))
         }
         Spacer(Modifier.height(8.dp))

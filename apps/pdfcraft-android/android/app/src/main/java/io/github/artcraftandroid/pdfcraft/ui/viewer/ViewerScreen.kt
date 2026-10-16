@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import android.app.Activity
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
@@ -295,8 +296,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut(),
         ) {
             Row(
-                Modifier.height(32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(5.dp)).background(Color(0xCCFFFFFF))
-                    .border(0.5.dp, Color(0xFFF5F5F5), androidx.compose.foundation.shape.RoundedCornerShape(5.dp))
+                Modifier.height(32.dp).clip(PdfShapes.Pill).background(Color(0xCCFFFFFF))
+                    .border(0.5.dp, Color(0xFFF5F5F5), PdfShapes.Pill)
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -476,7 +477,7 @@ fun InkWidthRow(color: Color, selected: Float?, onPick: (Float) -> Unit) {
         InkWidths.forEachIndexed { i, w ->
             Box(
                 Modifier.size(48.dp)
-                    .then(if (selected == w) Modifier.border(1.5.dp, c.accent, RoundedCornerShape(4.dp)) else Modifier)
+                    .then(if (selected == w) Modifier.border(1.5.dp, c.accent, PdfShapes.Small) else Modifier)
                     .clickable(role = Role.RadioButton) { onPick(w) }
                     .semantics { contentDescription = "Stroke width ${i + 1}" },
                 contentAlignment = Alignment.Center,
