@@ -1,5 +1,8 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import io.github.artcraftandroid.pdfcraft.ui.GLASS_PANEL_ALPHA
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import io.github.artcraftandroid.pdfcraft.ui.safeTopPadding
 import android.graphics.Bitmap
@@ -338,7 +341,7 @@ fun androidx.compose.foundation.layout.BoxScope.FillElementMenu(vm: AppViewModel
     val menuY = with(density) { (a.y - 60.dp.toPx()).coerceAtLeast(doc.viewer.padTop) }
     Column(Modifier.offset { androidx.compose.ui.unit.IntOffset(a.x.toInt().coerceAtLeast(8), menuY.toInt()) }) {
         Row(
-            Modifier.background(colors.surface, PdfShapes.Medium).padding(horizontal = 4.dp),
+            Modifier.floatingSurface(PdfShapes.Medium, tint = colors.surface, alpha = GLASS_PANEL_ALPHA).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BarIcon(LucideIcons.AArrowDown, "Smaller", { vm.scaleFill(doc, c, 1f / 1.2f) })
@@ -347,7 +350,7 @@ fun androidx.compose.foundation.layout.BoxScope.FillElementMenu(vm: AppViewModel
             BarIcon(LucideIcons.Trash2, "Delete", { vm.selectedFill = null; vm.deleteComment(doc, c) }, tint = colors.red)
         }
         if (palette) {
-            Row(Modifier.padding(top = 6.dp).background(colors.surface, PdfShapes.Medium).padding(8.dp)) {
+            Row(Modifier.padding(top = 6.dp).floatingSurface(PdfShapes.Medium, tint = colors.surface, alpha = GLASS_PANEL_ALPHA).padding(8.dp)) {
                 for (col in listOf(Color.Black, Color(0xFF0000FF), Color(0xFFE52237), Color(0xFF6AD928))) {
                     Box(Modifier.padding(4.dp).size(28.dp).clip(androidx.compose.foundation.shape.CircleShape).background(col).clickable {
                         palette = false

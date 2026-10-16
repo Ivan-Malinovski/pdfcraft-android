@@ -1,5 +1,11 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.FloatSide
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import io.github.artcraftandroid.pdfcraft.ui.glassSource
+import io.github.artcraftandroid.pdfcraft.ui.LocalGlassSource
+import io.github.artcraftandroid.pdfcraft.ui.rememberGlassSource
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import android.app.Activity
 import android.os.SystemClock
@@ -169,7 +175,8 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
 
     val search = doc.search
     val selection = doc.selection
-    val glass = rememberGlassSource()
+    // the app's glass source (Home and the viewer share it, so what floats above either frosts it)
+    val glass = LocalGlassSource.current ?: rememberGlassSource()
     val canvasLook = CanvasLook(background = c.desk, pageShadow = c.pageEdge, invert = ctl.nightMode)
 
     BackHandler(enabled = ctl.searching || ctl.tool != ViewerTool.None || selection.selection != null) {
@@ -374,7 +381,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                 enter = slideInVertically(tween(PdfMotion.BARS_MS)) { it } + fadeIn(tween(PdfMotion.BARS_MS)),
                 exit = slideOutVertically(tween(PdfMotion.BARS_MS)) { it } + fadeOut(tween(PdfMotion.BARS_MS)),
             ) {
-                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
+                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Bubble).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
                     if (ctl.tool == ViewerTool.None) {
                         QuickToolbar(
                             tools = vm.quickToolbar.bar,

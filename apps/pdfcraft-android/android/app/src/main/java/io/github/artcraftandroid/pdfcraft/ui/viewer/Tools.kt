@@ -1,5 +1,6 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background

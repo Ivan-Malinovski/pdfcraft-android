@@ -5,7 +5,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * The corner radii the app's surfaces share, so a button, a card, a menu and a dialog read as one family
- * with the floating bubbles ([io.github.artcraftandroid.pdfcraft.ui.viewer.BubbleShape] is the largest).
+ * with the floating bubbles ([Bubble] is the largest).
  */
 object PdfShapes {
     /** Check boxes and other small marks. */
@@ -23,8 +23,8 @@ object PdfShapes {
     /** Dialogs. */
     val Large = RoundedCornerShape(28.dp)
 
-    /** A bottom sheet's top corners. */
-    val SheetTop = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    /** The floating bars (a capsule for a one-row bar). */
+    val Bubble = RoundedCornerShape(30.dp)
 
     /** Buttons and chips: a capsule. */
     val Pill = RoundedCornerShape(50)

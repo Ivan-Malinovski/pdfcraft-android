@@ -1,5 +1,7 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import androidx.compose.foundation.background
 import android.os.Build
@@ -91,82 +93,12 @@ val BottomBarHeight = 70.dp
 /** A tool's bar inside its bubble: the bubble's own top inset (see [BubbleInsetBottom]) comes out of the usual height, so the buttons sit centred. */
 val ToolBarContentHeight: Dp get() = BottomBarHeight - BubbleInsetBottom
 
-/** The bars float over the pages as bubbles: this far in from the screen's sides. */
-val FloatSide = 12.dp
-
-/** ...and this far from the status band above and the navigation area below. */
-val FloatEdge = 8.dp
-
 /** The room the pages leave under the top bubble: its height, the gap above it and a little air. */
 val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
 
 /** The air inside the bottom bubble, so the end tools and the labels keep clear of its rounded corners. */
 val BubbleInsetX = 6.dp
 val BubbleInsetBottom = 10.dp
-
-/** The bubbles' corner radius: a capsule for a one-row bar. */
-val BubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp)
-
-/**
- * What the bubbles blur: the document, drawn once into a layer. The bubbles draw a blurred copy of the
- * part of it behind them (frosted glass). [origin] is where the document sits in the window.
- */
-@Stable
-class GlassSource(val layer: GraphicsLayer) {
-    var origin by mutableStateOf(Offset.Zero)
-}
-
-val LocalGlassSource = staticCompositionLocalOf<GlassSource?> { null }
-
-@Composable
-fun rememberGlassSource(): GlassSource {
-    val layer = rememberGraphicsLayer()
-    return remember(layer) { GlassSource(layer) }
-}
-
-/** Mark the document as what the bubbles frost: it is recorded into [source] as it draws. */
-fun Modifier.glassSource(source: GlassSource): Modifier = this
-    .onGloballyPositioned { source.origin = it.positionInWindow() }
-    .drawWithContent {
-        source.layer.record { this@drawWithContent.drawContent() }
-        drawLayer(source.layer)
-    }
-
-/**
- * A bar as a floating bubble: rounded, lifted off the page by a soft shadow and a hairline edge, and
- * frosted: the document behind it shows blurred through a translucent surface tint (Android 12 and up;
- * older versions get a nearly opaque surface, as the platform cannot blur what is behind).
- */
-@Composable
-fun Modifier.floatingSurface(shape: androidx.compose.ui.graphics.Shape = BubbleShape): Modifier {
-    val c = pdfColors
-    val glass = LocalGlassSource.current
-    val blurs = glass != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val frost = rememberGraphicsLayer()
-    var at by remember { mutableStateOf(Offset.Zero) }
-    val sigma = with(LocalDensity.current) { 20.dp.toPx() }
-    return this
-        .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.35f))
-        .clip(shape)
-        .onGloballyPositioned { at = it.positionInWindow() }
-        .drawBehind {
-            if (blurs && glass != null) {
-                // The copy is recorded wider than the bubble by the blur's reach, so the blur at the
-                // bubble's edges sees the document there; blurred on its own the edge pixels are smeared
-                // inward, and every line of text passing an edge flashes a streak.
-                val reach = (sigma * 3f).roundToInt()
-                frost.renderEffect = BlurEffect(sigma, sigma, TileMode.Clamp)
-                frost.record(size = IntSize(size.width.roundToInt() + 2 * reach, size.height.roundToInt() + 2 * reach)) {
-                    translate(glass.origin.x - at.x + reach, glass.origin.y - at.y + reach) { drawLayer(glass.layer) }
-                }
-                translate(-reach.toFloat(), -reach.toFloat()) { drawLayer(frost) }
-                drawRect(c.surface.copy(alpha = 0.6f))
-            } else {
-                drawRect(c.surface.copy(alpha = 0.97f))
-            }
-        }
-        .border(0.5.dp, c.divider.copy(alpha = 0.7f), shape)
-}
 
 /**
  * The top bar in plain viewing, as two floating pills: back, a divider and the Read aloud switch on the

@@ -1,5 +1,8 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.FloatSide
+import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import android.content.Context
 import android.content.Intent
@@ -447,7 +450,7 @@ fun BoxScope.ReadAloudBar(vm: io.github.artcraftandroid.pdfcraft.ui.AppViewModel
     val c = pdfColors
     var speeds by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(BubbleShape)) {
+    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Bubble)) {
         ProgressTrack(r.progress, Modifier.padding(horizontal = 26.dp).padding(top = 12.dp).fillMaxWidth().height(6.dp))
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 20.dp, top = 12.dp, bottom = 12.dp).height(56.dp),

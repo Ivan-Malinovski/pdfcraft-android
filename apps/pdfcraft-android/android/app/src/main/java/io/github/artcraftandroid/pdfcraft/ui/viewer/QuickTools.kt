@@ -1,5 +1,7 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
+import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import io.github.artcraftandroid.pdfcraft.ui.GLASS_PANEL_ALPHA
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import android.content.Context
 import androidx.compose.animation.core.RepeatMode
@@ -39,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -277,7 +278,7 @@ fun CustomizeToolbar(vm: AppViewModel, onDone: () -> Unit) {
             val half = with(LocalDensity.current) { 36.dp.toPx() }
             Box(
                 Modifier.offset { IntOffset((dragPos.x - origin.x - half).roundToInt(), (dragPos.y - origin.y - half).roundToInt()) }
-                    .shadow(6.dp, PdfShapes.Medium).background(c.surface, PdfShapes.Medium),
+                    .floatingSurface(PdfShapes.Medium, alpha = GLASS_PANEL_ALPHA),
             ) { BarTool(t, 72.dp) }
         }
     }
