@@ -1,6 +1,20 @@
 package io.github.artcraftandroid.pdfcraft.ui.viewer
 
 import androidx.compose.foundation.background
+import android.os.Build
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -84,16 +98,57 @@ val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
 val BubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp)
 
 /**
- * A bar as a floating bubble: rounded, lifted off the page by a soft shadow and a hairline edge, on
- * the bar surface.
+ * What the bubbles blur: the document, drawn once into a layer. The bubbles draw a blurred copy of the
+ * part of it behind them (frosted glass). [origin] is where the document sits in the window.
+ */
+@Stable
+class GlassSource(val layer: GraphicsLayer) {
+    var origin by mutableStateOf(Offset.Zero)
+}
+
+val LocalGlassSource = staticCompositionLocalOf<GlassSource?> { null }
+
+@Composable
+fun rememberGlassSource(): GlassSource {
+    val layer = rememberGraphicsLayer()
+    return remember(layer) { GlassSource(layer) }
+}
+
+/** Mark the document as what the bubbles frost: it is recorded into [source] as it draws. */
+fun Modifier.glassSource(source: GlassSource): Modifier = this
+    .onGloballyPositioned { source.origin = it.positionInWindow() }
+    .drawWithContent {
+        source.layer.record { this@drawWithContent.drawContent() }
+        drawLayer(source.layer)
+    }
+
+/**
+ * A bar as a floating bubble: rounded, lifted off the page by a soft shadow and a hairline edge, and
+ * frosted: the document behind it shows blurred through a translucent surface tint (Android 12 and up;
+ * older versions get a nearly opaque surface, as the platform cannot blur what is behind).
  */
 @Composable
 fun Modifier.floatingSurface(shape: androidx.compose.ui.graphics.Shape = BubbleShape): Modifier {
     val c = pdfColors
+    val glass = LocalGlassSource.current
+    val blurs = glass != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val frost = rememberGraphicsLayer()
+    var at by remember { mutableStateOf(Offset.Zero) }
+    val sigma = with(LocalDensity.current) { 20.dp.toPx() }
     return this
         .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.35f))
         .clip(shape)
-        .background(c.surface)
+        .onGloballyPositioned { at = it.positionInWindow() }
+        .drawBehind {
+            if (blurs && glass != null) {
+                frost.renderEffect = BlurEffect(sigma, sigma, TileMode.Clamp)
+                frost.record { translate(glass.origin.x - at.x, glass.origin.y - at.y) { drawLayer(glass.layer) } }
+                drawLayer(frost)
+                drawRect(c.surface.copy(alpha = 0.5f))
+            } else {
+                drawRect(c.surface.copy(alpha = 0.97f))
+            }
+        }
         .border(0.5.dp, c.divider.copy(alpha = 0.7f), shape)
 }
 

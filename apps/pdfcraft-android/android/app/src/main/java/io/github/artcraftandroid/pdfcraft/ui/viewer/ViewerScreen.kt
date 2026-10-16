@@ -162,6 +162,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
 
     val search = doc.search
     val selection = doc.selection
+    val glass = rememberGlassSource()
     val canvasLook = CanvasLook(background = c.desk, pageShadow = c.pageEdge, invert = ctl.nightMode)
 
     BackHandler(enabled = ctl.searching || ctl.tool != ViewerTool.None || selection.selection != null) {
@@ -173,6 +174,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     }
 
     // a magnifier over the text while a selection handle is dragged, as the reference shows one
+    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
     Box(
         Modifier.fillMaxSize().background(c.desk).magnifier(
             sourceCenter = { selection.magnifierAt ?: Offset.Unspecified },
@@ -190,7 +192,9 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
             bottom = with(density) { doc.viewer.padBottom.toDp() },
             onTap = { ctl.toggleBars() },
             onScroll = { dy, atTop -> ctl.onUserScroll(dy / density.density, atTop) },
+            modifier = Modifier.background(c.desk).glassSource(glass),
         ) else PageCanvas(
+            modifier = Modifier.glassSource(glass),
             state = doc.viewer,
             images = doc.images,
             generation = doc.info.generation.toLong(),
@@ -431,6 +435,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         vm.readAloud?.let { ReadAloudBar(vm, doc, it) }
         if (ctl.goToPage) GoToPageDialog(doc, onDismiss = { ctl.goToPage = false })
         if (ctl.pagesOpen) PagesScreen(vm, doc, onClose = { ctl.pagesOpen = false })
+    }
     }
 }
 
