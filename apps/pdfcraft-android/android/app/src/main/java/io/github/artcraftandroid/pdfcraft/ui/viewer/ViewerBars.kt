@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +78,7 @@ import io.github.artcraftandroid.pdfcraft.ui.BarIcon
 import io.github.artcraftandroid.pdfcraft.ui.Inter
 import io.github.artcraftandroid.pdfcraft.ui.LucideIcons
 import io.github.artcraftandroid.pdfcraft.ui.pdfColors
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 
 /** The viewer's top bar height (the reference's: 56 dp). */
@@ -148,10 +150,16 @@ fun Modifier.floatingSurface(shape: androidx.compose.ui.graphics.Shape = BubbleS
         .onGloballyPositioned { at = it.positionInWindow() }
         .drawBehind {
             if (blurs && glass != null) {
+                // The copy is recorded wider than the bubble by the blur's reach, so the blur at the
+                // bubble's edges sees the document there; blurred on its own the edge pixels are smeared
+                // inward, and every line of text passing an edge flashes a streak.
+                val reach = (sigma * 3f).roundToInt()
                 frost.renderEffect = BlurEffect(sigma, sigma, TileMode.Clamp)
-                frost.record { translate(glass.origin.x - at.x, glass.origin.y - at.y) { drawLayer(glass.layer) } }
-                drawLayer(frost)
-                drawRect(c.surface.copy(alpha = 0.5f))
+                frost.record(size = IntSize(size.width.roundToInt() + 2 * reach, size.height.roundToInt() + 2 * reach)) {
+                    translate(glass.origin.x - at.x + reach, glass.origin.y - at.y + reach) { drawLayer(glass.layer) }
+                }
+                translate(-reach.toFloat(), -reach.toFloat()) { drawLayer(frost) }
+                drawRect(c.surface.copy(alpha = 0.6f))
             } else {
                 drawRect(c.surface.copy(alpha = 0.97f))
             }
