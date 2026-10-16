@@ -148,8 +148,9 @@ fun PageCanvas(
                                 if (zoomChange != 1f) state.zoomBy(zoomChange, c)
                             }
                             if (pan != Offset.Zero) {
-                                state.scrollBy(pan.x, pan.y)
-                                if (pressed.size == 1) onScroll(pan.y)
+                                val left = state.scrollBy(pan.x, pan.y)
+                                // only what the page really moved: a drag against its end isn't a scroll
+                                if (pressed.size == 1) onScroll(pan.y - left.y)
                             }
                             event.changes.forEach { if (it.positionChanged()) it.consume() }
                         }
@@ -188,7 +189,7 @@ private suspend fun settle(state: ViewerState, velocity: Offset, density: Float,
         val d = value - last
         last = value
         val left = state.scrollBy(d.x, d.y)
-        onScroll(d.y)
+        onScroll(d.y - left.y)
         // stop at the ends instead of decaying against them
         if (abs(left.x) > 0.5f && abs(left.y) > 0.5f) throw CancellationException("at the edge")
     }
