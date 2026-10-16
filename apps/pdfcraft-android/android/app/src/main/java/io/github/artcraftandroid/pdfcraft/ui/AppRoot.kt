@@ -52,9 +52,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
@@ -146,12 +149,14 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     }
     // what floats above Home or the viewer (sheets, the snackbar, the viewer's bars) frosts the screen below it
     val glass = rememberGlassSource()
+    var contentOrigin by remember { mutableStateOf(Offset.Zero) }
     androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
     // sideways, the camera cutout and the navigation bar sit at the sides: content stays between
     // them, on black, as the reference's does
     Box(
         Modifier.fillMaxSize().background(Color.Black)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .onGloballyPositioned { contentOrigin = it.positionInRoot() }
             .background(c.surface),
     ) {
         if (doc == null || backProgress > 0f || (openBounds != null && openProgress.value < 1f)) {
@@ -166,7 +171,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
         ) { ViewerScreen(vm, doc) }
         if (doc != null && openBounds != null && openProgress.value < 1f && doc.viewer.viewW > 0f) {
             val page = doc.viewer.currentPage
-            OpeningThumbnail(openBounds, doc.viewer.pageRectOnScreen(page), openProgress.value, openImage)
+            OpeningThumbnail(openBounds, doc.viewer.pageRectOnScreen(page), contentOrigin, openProgress.value, openImage)
         }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
         if (doc == null) vm.fileSheet?.let { (r, recent) -> io.github.artcraftandroid.pdfcraft.ui.home.FileSheet(vm, r, recent) { vm.fileSheet = null } }
@@ -299,10 +304,10 @@ private fun Modifier.predictiveBack(progress: Float, edge: Int): Modifier = if (
 
 /** Carry the file thumbnail into the visible page rectangle, then hand it to the canvas. */
 @Composable
-private fun OpeningThumbnail(start: androidx.compose.ui.geometry.Rect, end: androidx.compose.ui.geometry.Rect, progress: Float, image: ImageBitmap?) {
+private fun OpeningThumbnail(start: androidx.compose.ui.geometry.Rect, end: androidx.compose.ui.geometry.Rect, origin: Offset, progress: Float, image: ImageBitmap?) {
     val density = LocalDensity.current
-    val x = lerp(start.left, end.left, progress)
-    val y = lerp(start.top, end.top, progress)
+    val x = lerp(start.left - origin.x, end.left, progress)
+    val y = lerp(start.top - origin.y, end.top, progress)
     val w = lerp(start.width, end.width, progress).coerceAtLeast(1f)
     val h = lerp(start.height, end.height, progress).coerceAtLeast(1f)
     val shape = androidx.compose.foundation.shape.RoundedCornerShape((12f * (1f - progress)).dp)
