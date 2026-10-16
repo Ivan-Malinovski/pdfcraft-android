@@ -109,6 +109,10 @@ object PdfMotion {
     /** A committed back gesture carries on shrinking and fading the page for this long before Home is all that is left. */
     const val BACK_COMMIT_MS = 240
 
+    /** The page opening from its thumbnail: a quick start that settles into place. */
+    const val OPEN_MS = 380
+    val OpenEasing = androidx.compose.animation.core.CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+
     /** A pulled sheet closes when dragged this fraction of its height down, or flung faster than [SHEET_DISMISS_VELOCITY] px/s. */
     const val SHEET_DISMISS_FRACTION = 0.25f
     const val SHEET_DISMISS_VELOCITY = 1200f
