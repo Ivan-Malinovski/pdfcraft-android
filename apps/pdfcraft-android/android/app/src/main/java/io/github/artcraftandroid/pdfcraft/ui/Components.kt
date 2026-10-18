@@ -3,6 +3,7 @@ package io.github.artcraftandroid.pdfcraft.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
@@ -16,6 +17,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -98,6 +100,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 /** Motion for sheets: in rising from below, out dropping away. */
@@ -641,17 +644,50 @@ fun WordWrapLabel(
 fun GlassSnackbar(data: androidx.compose.material3.SnackbarData) {
     val c = pdfColors
     val v = data.visuals
-    Row(
-        Modifier.fillMaxWidth().floatingSurface(PdfShapes.Bubble, alpha = GLASS_PANEL_ALPHA).padding(start = 20.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(v.message, color = c.text, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(vertical = 14.dp))
-        v.actionLabel?.let { label ->
-            Text(
-                label, color = c.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(PdfShapes.Pill).clickable(onClick = data::performAction).padding(horizontal = 12.dp, vertical = 10.dp),
-            )
+    val scope = rememberCoroutineScope()
+    var swipeX by remember(data) { mutableFloatStateOf(0f) }
+    var widthPx by remember(data) { mutableIntStateOf(0) }
+    val settleJob = remember(data) { arrayOfNulls<Job>(1) }
+    fun settleBack() {
+        settleJob[0] = scope.launch {
+            Animatable(swipeX).animateTo(0f, spring()) { swipeX = value }
         }
-        if (v.withDismissAction) BarIcon(LucideIcons.X, "Dismiss", data::dismiss, size = 40.dp, iconSize = 18.dp)
+    }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.widthIn(max = 480.dp)) {
+        val messageMaxWidth = (maxWidth - if (v.actionLabel != null) 160.dp else 68.dp).coerceAtLeast(80.dp)
+        val exitDistance = with(LocalDensity.current) { maxWidth.toPx() } + widthPx
+        Row(
+            Modifier.offset { IntOffset(swipeX.roundToInt(), 0) }
+                .onSizeChanged { widthPx = it.width }
+                .pointerInput(data, exitDistance) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { settleJob[0]?.cancel() },
+                        onDragEnd = {
+                            if (abs(swipeX) >= widthPx * 0.3f) {
+                                settleJob[0] = scope.launch {
+                                    val target = if (swipeX >= 0f) exitDistance else -exitDistance
+                                    Animatable(swipeX).animateTo(target, tween(180)) { swipeX = value }
+                                    data.dismiss()
+                                }
+                            } else settleBack()
+                        },
+                        onDragCancel = { settleBack() },
+                    ) { change, distance ->
+                        swipeX += distance
+                        change.consume()
+                    }
+                }
+                .floatingSurface(PdfShapes.Bubble, alpha = GLASS_PANEL_ALPHA).padding(start = 20.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(v.message, color = c.text, fontSize = 14.sp, modifier = Modifier.widthIn(max = messageMaxWidth).padding(vertical = 14.dp))
+            v.actionLabel?.let { label ->
+                Text(
+                    label, color = c.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(PdfShapes.Pill).clickable(onClick = data::performAction).padding(horizontal = 12.dp, vertical = 10.dp),
+                )
+            }
+            if (v.withDismissAction) BarIcon(LucideIcons.X, "Dismiss", data::dismiss, size = 40.dp, iconSize = 18.dp)
+        }
     }
 }
