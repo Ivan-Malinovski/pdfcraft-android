@@ -95,7 +95,7 @@ fun CommentPanel(vm: AppViewModel, doc: OpenDocument, c: CommentInfo) {
     val scroll = rememberScrollState()
     var expanded by remember(c.page, c.index) { mutableStateOf(false) }
     LaunchedEffect(scroll.value > 0) { if (scroll.value > 0) expanded = true }
-    val landscape = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp > it.screenHeightDp }
+    val landscape = io.github.artcraftandroid.pdfcraft.ui.LocalWindowSize.current.landscape
     val fraction by androidx.compose.animation.core.animateFloatAsState(if (expanded) 0.6f else if (landscape) 0.5f else 0.4f, label = "panel")
     PdfSheet(onDismiss = { vm.selectedComment = null }, modifier = Modifier.imePadding(), maxHeightFraction = fraction, background = colors.menu, handleHeight = 12.dp, aboveNavBar = true, fill = true) {
         Column(Modifier.fillMaxWidth().fillMaxHeight()) {

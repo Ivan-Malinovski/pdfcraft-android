@@ -13,6 +13,9 @@ class Haptics(private val feedback: HapticFeedback) {
     /** A light tick: a tool was picked, or a page was reached. */
     fun tick() = feedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
 
+    /** Something was picked up to be moved (press and hold). */
+    fun pickUp() = feedback.performHapticFeedback(HapticFeedbackType.LongPress)
+
     /** A switch went on or off. */
     fun toggle(on: Boolean) = feedback.performHapticFeedback(if (on) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
 }

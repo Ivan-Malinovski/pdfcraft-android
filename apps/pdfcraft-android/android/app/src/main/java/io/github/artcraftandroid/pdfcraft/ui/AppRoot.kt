@@ -133,7 +133,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     }
     // what floats above Home or the viewer (sheets, the snackbar, the viewer's bars) frosts the screen below it
     val glass = rememberGlassSource()
-    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass, LocalWindowSize provides rememberWindowSize()) {
     // sideways, the camera cutout and the navigation bar sit at the sides: content stays between
     // them, on black, as the reference's does
     Box(
@@ -147,13 +147,11 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
                 // backdrop: bring Home up beneath it for the length of the gesture (its own frost source, the viewer's is busy)
                 if (backProgress > 0f || backExit > 0f) {
                     val homeGlass = rememberGlassSource()
-                    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides homeGlass) {
-                        Box(Modifier.fillMaxSize().glassSource(homeGlass)) { HomeRoot(vm, onBrowse) }
-                    }
+                    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides homeGlass) { HomeRoot(vm, onBrowse, homeGlass) }
                 }
                 Box(Modifier.fillMaxSize().predictiveBack(backProgress, backExit, backEdge)) { ViewerScreen(vm, doc) }
             }
-            else -> Box(Modifier.fillMaxSize().glassSource(glass)) { HomeRoot(vm, onBrowse) }
+            else -> HomeRoot(vm, onBrowse, glass)
         }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
         if (doc == null) vm.fileSheet?.let { (r, recent) -> io.github.artcraftandroid.pdfcraft.ui.home.FileSheet(vm, r, recent) { vm.fileSheet = null } }

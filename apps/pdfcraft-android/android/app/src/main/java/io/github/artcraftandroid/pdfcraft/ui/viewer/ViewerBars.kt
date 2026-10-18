@@ -99,7 +99,7 @@ val ToolBarContentHeight: Dp get() = BottomBarHeight - BubbleInsetBottom
 val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
 
 /** The air inside the bottom bubble, so the end tools and the labels keep clear of its rounded corners. */
-val BubbleInsetX = 6.dp
+val BubbleInsetX = 12.dp
 val BubbleInsetBottom = 10.dp
 
 /**
@@ -296,7 +296,7 @@ fun SearchBar(
 
 /**
  * An item of the bottom quick toolbar, laid out as the reference does: 5 dp down, the icon in a
- * 44 dp box (shaded while its tool is open), the label straight under it, and a corner mark when
+ * 44 dp box (a pill tinted with the accent while its tool is open), the label straight under it, and a corner mark when
  * the tool has sub-tools. As the reference's, the label follows the phone's font size setting: the
  * item grows taller to hold it, and a long label wraps onto a second line (in a fixed height, a
  * large font setting cut the labels off at the bottom).
@@ -304,17 +304,19 @@ fun SearchBar(
 @Composable
 private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, subTools: Boolean = false, selected: Boolean = false, width: Dp) {
     val c = pdfColors
+    val accent = io.github.artcraftandroid.pdfcraft.ui.home.homeAccent(c.dark)
     val tick = tickOnClick(onClick)
     Column(
         Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = label }
-            .padding(horizontal = 2.dp, vertical = 5.dp),
+            .padding(start = 2.dp, end = 2.dp, top = BubbleInsetBottom),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) c.divider else Color.Transparent, PdfShapes.Small),
+            Modifier.size(width = 44.dp, height = 34.dp).background(if (selected) io.github.artcraftandroid.pdfcraft.ui.home.tint(accent, c.dark) else Color.Transparent, PdfShapes.Pill),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, tint = c.icon, modifier = Modifier.size(24.dp))
+            Icon(icon, null, tint = if (selected) accent else c.icon, modifier = Modifier.size(24.dp))
             if (subTools) {
                 // the small corner triangle: this tool has a row of sub-tools
                 val tint = c.cornerMark
@@ -328,79 +330,45 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
         // tighter letters its width; lines close together, so a wrapped label stays one block, and
         // a word too wide for its slot (a very large font setting) shrinks rather than splits
         io.github.artcraftandroid.pdfcraft.ui.WordWrapLabel(
-            label, c.label, size = 10.5.sp, lineHeight = 13.sp, letterSpacing = (-0.5).sp,
-            modifier = Modifier.padding(top = 2.5.dp),
+            label, if (selected) accent else c.label, size = 10.5.sp, lineHeight = 13.sp, letterSpacing = (-0.5).sp,
+            modifier = Modifier.padding(top = 1.dp),
         )
     }
 }
 
-/** The strip above the quick toolbar's tools that holds its handle. */
-val QuickHandleHeight = 22.dp
-
-/** The handle's touch target: wide enough to hit, narrower than the smallest bar (More alone). */
-private val QuickHandleWidth = 72.dp
-
-/** The quick toolbar's height with its handle, the shortcuts folded away. */
-val QuickBarHeight = BottomBarHeight + QuickHandleHeight
-
-/** A shortcut in the row the quick toolbar's handle pulls up. */
-class QuickChip(val label: String, val icon: ImageVector, val tint: Color, val onClick: () -> Unit)
+/** The quick toolbar's height. */
+val QuickBarHeight = BottomBarHeight
 
 /**
- * The quick toolbar: a handle, then the tools the user keeps there (the reference's six at first)
- * and More tools. Pulling the handle up (or tapping it) shows a row of [chips] above the tools,
- * scrolling sideways; pulling it down folds them away. No line along its top, as the reference.
+ * The quick toolbar: the tools the user keeps there and More tools.
  */
 @Composable
 fun QuickToolbar(
     tools: List<QuickTool>,
+    slots: Int,
     onTool: (QuickTool) -> Unit,
     onMoreTools: () -> Unit,
     moreToolsOpen: Boolean,
-    chips: List<QuickChip> = emptyList(),
+    /** Down a side of the screen rather than along the bottom: the tools stand one above the other. */
+    vertical: Boolean = false,
     /** How much taller than usual the tools' row is (a large font setting), in pixels. */
     onExtraHeight: (Int) -> Unit = {},
 ) {
-    val c = pdfColors
-    var open by remember { androidx.compose.runtime.mutableStateOf(false) }
-    // the bubble is as wide as the tools in it (fewer pinned shortcuts, a narrower pill); the shortcut chips follow that width
-    var toolsWidthPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val shown = tools.take(slots)
+    if (vertical) {
+        Column(Modifier.width(SideQuickItemWidth)) {
+            for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = SideQuickItemWidth)
+            QuickItem(LucideIcons.LayoutGrid, "More", onMoreTools, selected = moreToolsOpen, width = SideQuickItemWidth)
+        }
+        return
+    }
     androidx.compose.foundation.layout.BoxWithConstraints {
-        val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
-        val shown = tools.take(slots)
         val itemW = minOf(72.dp, (maxWidth - 4.dp) / maxOf(7, shown.size + 1))
-        Column(
-            Modifier.pointerInput(chips.isNotEmpty()) {
-                if (chips.isEmpty()) return@pointerInput
-                var pulled = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { pulled = 0f },
-                    onDragEnd = { if (pulled < -8f) open = true else if (pulled > 8f) open = false },
-                ) { _, dy -> pulled += dy }
-            },
-        ) {
-            Box(
-                Modifier.align(Alignment.CenterHorizontally).width(QuickHandleWidth).height(QuickHandleHeight)
-                    .clickable(enabled = chips.isNotEmpty(), role = Role.Button) { open = !open }
-                    .semantics { contentDescription = if (open) "Hide shortcuts" else "Show shortcuts" },
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                // measured on the dark bar; the light bar's grey is our own match
-                val handle = if (c.dark) Color(0xFFA6A6A6) else Color(0xFFC4C4C4)
-                Box(Modifier.padding(top = 15.dp).size(40.dp, 4.dp).background(handle, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
-            }
-            androidx.compose.animation.AnimatedVisibility(open && chips.isNotEmpty()) {
-                Row(
-                    Modifier.then(if (toolsWidthPx > 0) Modifier.width(with(androidx.compose.ui.platform.LocalDensity.current) { toolsWidthPx.toDp() }) else Modifier.fillMaxWidth())
-                        .horizontalScroll(androidx.compose.foundation.rememberScrollState())
-                        .padding(start = 18.dp, end = 18.dp, top = 5.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(11.dp),
-                ) { for (chip in chips) QuickChipView(chip) }
-            }
+        Column {
             val usual = with(androidx.compose.ui.platform.LocalDensity.current) { BottomBarHeight.roundToPx() }
             Row(
                 Modifier.heightIn(min = BottomBarHeight)
-                    .onSizeChanged { toolsWidthPx = it.width; onExtraHeight((it.height - usual).coerceAtLeast(0)) },
+                    .onSizeChanged { onExtraHeight((it.height - usual).coerceAtLeast(0)) },
                 horizontalArrangement = Arrangement.Center,
             ) {
                 for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = itemW)
@@ -410,22 +378,8 @@ fun QuickToolbar(
     }
 }
 
-/** One shortcut: its coloured icon and name on a dark rounded box, 37 dp tall. */
-@Composable
-private fun QuickChipView(chip: QuickChip) {
-    val c = pdfColors
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
-    Row(
-        Modifier.heightIn(min = 37.dp).clip(shape).background(if (c.dark) Color(0xFF080808) else Color(0xFFEDEDED))
-            .clickable(role = Role.Button, onClick = chip.onClick).padding(start = 7.dp, end = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // sized against the reference: its icon draws about 18 dp, its name 14 sp in a narrower face
-        Icon(chip.icon, null, tint = chip.tint, modifier = Modifier.size(21.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(chip.label, color = c.text, fontSize = 14.sp, letterSpacing = (-0.65).sp, maxLines = 1)
-    }
-}
+/** An item's width in the quick toolbar when it stands down a side of the screen. */
+val SideQuickItemWidth = 66.dp
 
 /** The 1 dp line the reference draws along the top of its bottom bars, just above them. */
 @Composable
