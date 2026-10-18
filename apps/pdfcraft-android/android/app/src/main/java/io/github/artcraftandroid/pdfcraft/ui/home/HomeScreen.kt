@@ -1,8 +1,11 @@
 package io.github.artcraftandroid.pdfcraft.ui.home
 
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
+import io.github.artcraftandroid.pdfcraft.ui.GlassSource
+import io.github.artcraftandroid.pdfcraft.ui.glassSource
 import io.github.artcraftandroid.pdfcraft.ui.safeTopPadding
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,7 +52,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -78,6 +85,9 @@ import java.util.Calendar
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /** The tabs along the bottom of the app. */
 enum class HomeTab(val label: String) { Home("Home"), Files("Files"), Tools("Tools"), Search("Search") }
@@ -97,44 +107,62 @@ data class FileRow(
 
 /** The app outside the viewer: the current tab's screen over the bottom bar. */
 @Composable
-fun HomeRoot(vm: AppViewModel, onBrowse: () -> Unit) {
+fun HomeRoot(vm: AppViewModel, onBrowse: () -> Unit, glass: GlassSource) {
     val c = pdfColors
+    var fabMenu by remember { mutableStateOf(false) }
     // Home and its tabs sit on the reference's home background: white, or black in dark mode
-    Column(Modifier.fillMaxSize().background(c.home)) {
-        Box(Modifier.weight(1f)) {
-            when (vm.homeTab) {
-                HomeTab.Home -> HomeTabScreen(vm, onBrowse)
-                HomeTab.Files -> FilesTab(vm, onBrowse)
-                HomeTab.Tools -> ToolsTab(vm)
-                HomeTab.Search -> SearchTab(vm)
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(c.home).glassSource(glass)) {
+            Box(Modifier.weight(1f)) {
+                when (vm.homeTab) {
+                    HomeTab.Home -> HomeTabScreen(vm, onBrowse) { fabMenu = true }
+                    HomeTab.Files -> FilesTab(vm, onBrowse)
+                    HomeTab.Tools -> ToolsTab(vm)
+                    HomeTab.Search -> SearchTab(vm)
+                }
+            }
+            BottomNav(vm.homeTab) { vm.homeTab = it }
+        }
+        if (fabMenu) {
+            PdfSheet(onDismiss = { fabMenu = false }, dim = true) {
+                SheetRow(LucideIcons.FolderOpen, "Open file", { fabMenu = false; onBrowse() })
+                SheetRow(LucideIcons.Camera, "New scan", { fabMenu = false; vm.startScan() })
+                SheetDivider()
+                SheetRow(LucideIcons.FilePenLine, "Edit PDF", { fabMenu = false; vm.toolForFile(FileTool.Edit) })
+                SheetRow(LucideIcons.FilePlus2, "Create PDF", { fabMenu = false; vm.openCreate() })
+                SheetRow(LucideIcons.Combine, "Combine files", { fabMenu = false; vm.pickFiles(io.github.artcraftandroid.pdfcraft.ui.FilePickKind.Combine) })
+                Spacer(Modifier.height(12.dp))
             }
         }
-        BottomNav(vm.homeTab) { vm.homeTab = it }
     }
 }
 
-/** The bottom bar: Home, Files, Tools, Search; the chosen one in the accent colour. */
+/** The three main destinations; Search is reached from Home. */
 @Composable
 private fun BottomNav(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
     val c = pdfColors
-    Column(Modifier.fillMaxWidth().background(c.home).drawBehind { drawLine(c.divider, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }) {
-        Row(Modifier.fillMaxWidth().height(61.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            for (t in HomeTab.entries) {
+    val accent = homeAccent(c.dark)
+    Column(Modifier.fillMaxWidth().background(c.surface).drawBehind { drawLine(homeLine(c.dark), Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }) {
+        Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 13.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            for (t in listOf(HomeTab.Home, HomeTab.Files, HomeTab.Tools)) {
                 val icon = when (t) {
                     HomeTab.Home -> LucideIcons.House
                     HomeTab.Files -> LucideIcons.Folder
                     HomeTab.Tools -> LucideIcons.LayoutGrid
                     HomeTab.Search -> LucideIcons.Search
                 }
-                val tint = if (t == selected) c.toolAccent else c.icon
+                val active = t == selected || (t == HomeTab.Home && selected == HomeTab.Search)
+                val iconTint = if (active) accent else c.textSecondary
                 Column(
-                    Modifier.weight(1f).height(61.dp).clickable(role = Role.Tab) { onSelect(t) }.semantics { contentDescription = t.label },
+                    Modifier.weight(1f).height(56.dp).clip(PdfShapes.Medium)
+                        .background(if (active) tint(accent, c.dark) else Color.Transparent)
+                        .clickable(role = Role.Tab) { onSelect(t) }.semantics { contentDescription = t.label },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.height(5.dp))
-                    Text(t.label, color = tint, fontSize = 11.sp)
+                    Icon(icon, null, tint = iconTint, modifier = Modifier.size(21.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Text(t.label, color = iconTint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -144,15 +172,17 @@ private fun BottomNav(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
 
 /** Home: the app's name and Settings, a welcome, the tools carousel, then Recent, Starred and On device. */
 @Composable
-private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit) {
+private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit, onOpenFab: () -> Unit) {
     val c = pdfColors
-    var tab by remember { mutableStateOf(0) }
-    var fabMenu by remember { mutableStateOf(false) }
+    // -1 is the overview; the old full lists remain reachable from each section's See all.
+    var tab by remember { mutableStateOf(-1) }
     var menu by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var confirmDeleteSelected by remember { mutableStateOf(false) }
     LaunchedEffect(tab) { if (tab == 2) vm.scanLocal(); vm.selectedFiles.clear() }
-    androidx.activity.compose.BackHandler(enabled = vm.selectedFiles.isNotEmpty()) { vm.selectedFiles.clear() }
+    androidx.activity.compose.BackHandler(enabled = vm.selectedFiles.isNotEmpty() || tab >= 0) {
+        if (vm.selectedFiles.isNotEmpty()) vm.selectedFiles.clear() else tab = -1
+    }
     if (confirmDeleteSelected) {
         val rows = vm.selectedFiles.values.toList()
         io.github.artcraftandroid.pdfcraft.ui.PdfDialog(
@@ -163,24 +193,93 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit) {
         ) { Text("They are removed from this phone.", color = c.text, fontSize = 14.sp) }
     }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().safeTopPadding()) {
+        Column(Modifier.fillMaxSize().background(if (tab == -1) homeCanvas(c.dark) else c.home).safeTopPadding()) {
             if (vm.selectedFiles.isNotEmpty()) SelectionBar(vm, recent = tab == 0, onDelete = { confirmDeleteSelected = true }) else
-            Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Image(painterResource(R.drawable.ic_launcher_tile), null, modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)))
-                Spacer(Modifier.width(10.dp))
-                Text("PdfCraft", color = c.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().height(if (tab == -1) 74.dp else 56.dp).padding(start = if (tab == -1) 23.dp else 16.dp, end = if (tab == -1) 23.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(if (tab == -1) 39.dp else 28.dp)
+                    .clip(RoundedCornerShape(12.dp)).background(homeAccent(c.dark)), contentAlignment = Alignment.Center) {
+                    Text("P", color = Color.White, fontSize = if (tab == -1) 23.sp else 18.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(13.dp))
+                Text("PDFCraft", color = if (tab == -1) homeInk(c.dark) else c.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(c.surfaceRaised).clickable { vm.settingsOpen = true }.semantics { contentDescription = "Settings" },
+                    Modifier.size(40.dp).clip(CircleShape).background(if (tab == -1) homeIconWash(c.dark) else c.surfaceRaised)
+                        .clickable { vm.settingsOpen = true }.semantics { contentDescription = "Settings" },
                     contentAlignment = Alignment.Center,
                 ) { Icon(LucideIcons.UserRound, null, tint = c.icon, modifier = Modifier.size(22.dp)) }
             }
-            LazyColumn(Modifier.weight(1f)) {
+            if (tab == -1) {
+                val recents = vm.recentRows()
+                val starred = vm.starredRows()
+                val last = vm.recentList.firstOrNull()
+                LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 28.dp)) {
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 23.dp, vertical = 6.dp)
+                                .clip(PdfShapes.Medium).background(c.surface)
+                                .border(1.dp, homeLine(c.dark), PdfShapes.Medium)
+                                .clickable(role = Role.Button) { vm.homeTab = HomeTab.Search }
+                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                                .semantics { contentDescription = "Search your PDFs" },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(LucideIcons.Search, null, tint = homeMuted(c.dark), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("Search your PDFs", color = homeMuted(c.dark), fontSize = 14.sp)
+                        }
+                    }
+                    if (last != null && recents.isNotEmpty()) {
+                        item {
+                            HomeSectionHeader("Continue reading")
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 23.dp)
+                                    .clip(RoundedCornerShape(22.dp)).background(homeContinueBrush(c.dark))
+                                    .border(1.dp, homeContinueLine(c.dark), RoundedCornerShape(22.dp))
+                                    .clickable(role = Role.Button, onClick = recents.first().open)
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                FileThumb(vm, recents.first().thumbPath, 72, 94)
+                                Spacer(Modifier.width(16.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("LAST OPENED", color = homeAccent(c.dark), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+                                    Spacer(Modifier.height(5.dp))
+                                    Text(last.name, color = homeInk(c.dark), fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.height(5.dp))
+                                    Text("Page ${last.lastPage + 1} of ${last.pages.coerceAtLeast(1)} · ${whenLabel(last.opened)}", color = homeMuted(c.dark), fontSize = 12.sp)
+                                    Spacer(Modifier.height(13.dp))
+                                    Box(Modifier.fillMaxWidth().height(4.dp).clip(PdfShapes.Pill).background(homeProgressTrack(c.dark))) {
+                                        Box(Modifier.fillMaxWidth(((last.lastPage + 1).toFloat() / last.pages.coerceAtLeast(1)).coerceIn(0f, 1f))
+                                            .height(4.dp).clip(PdfShapes.Pill).background(homeAccent(c.dark)))
+                                    }
+                                }
+                                Icon(LucideIcons.ChevronRight, null, tint = homeAccent(c.dark), modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+                    item {
+                        HomeSectionHeader("Start something")
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 23.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HomeAction(LucideIcons.FolderOpen, "Open file", Color(0xFF5179BD), Modifier.weight(1f), onBrowse)
+                            HomeAction(LucideIcons.Camera, "Scan", Color(0xFFD7734F), Modifier.weight(1f)) { vm.startScan() }
+                            HomeAction(LucideIcons.FilePlus2, "Create PDF", Color(0xFF8664C1), Modifier.weight(1f)) { vm.openCreate() }
+                        }
+                    }
+                    if (starred.isNotEmpty()) {
+                        item { HomeSectionHeader("Starred", onSeeAll = { tab = 1 }) }
+                        items(starred.take(2), key = { "starred:${it.key}" }) { r -> HomeFileRow(vm, r) }
+                    }
+                    item { HomeSectionHeader("Recent files", onSeeAll = { tab = 0 }) }
+                    if (recents.isEmpty()) item {
+                        Text("Files you open will appear here.", color = homeMuted(c.dark), fontSize = 13.sp,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 23.dp, vertical = 10.dp))
+                    }
+                    else items(recents.take(3), key = { "recent:${it.key}" }) { r -> HomeFileRow(vm, r) }
+                }
+            } else LazyColumn(Modifier.weight(1f)) {
                 item {
-                    Text(if (vm.recentList.isEmpty()) "Welcome" else "Welcome back", color = c.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 16.dp))
-                    Text("Start with a tool", color = c.text, fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp))
-                    ToolsCarousel(vm, onBrowse)
-                    Spacer(Modifier.height(16.dp))
                     Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BarIcon(LucideIcons.ArrowLeft, "Back to Home", { tab = -1 })
                         listOf("Recent", "Starred", "On device").forEachIndexed { i, label ->
                             Column(Modifier.clickable(role = Role.Tab) { tab = i }.padding(horizontal = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(label, color = if (tab == i) c.text else c.textSecondary, fontSize = 15.sp, fontWeight = if (tab == i) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(vertical = 10.dp))
@@ -234,24 +333,13 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit) {
                 item { Spacer(Modifier.height(88.dp)) }
             }
         }
-        FloatingActionButton(
-            onClick = { fabMenu = true },
+        if (tab >= 0) FloatingActionButton(
+            onClick = onOpenFab,
             containerColor = c.button,
             contentColor = Color.White,
             shape = CircleShape,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).semantics { contentDescription = "Tools" },
         ) { Icon(LucideIcons.Plus, null, modifier = Modifier.size(26.dp)) }
-    }
-    if (fabMenu) {
-        PdfSheet(onDismiss = { fabMenu = false }, dim = true) {
-            SheetRow(LucideIcons.FolderOpen, "Open file", { fabMenu = false; onBrowse() })
-            SheetRow(LucideIcons.Camera, "New scan", { fabMenu = false; vm.startScan() })
-            SheetDivider()
-            SheetRow(LucideIcons.FilePenLine, "Edit PDF", { fabMenu = false; vm.toolForFile(FileTool.Edit) })
-            SheetRow(LucideIcons.FilePlus2, "Create PDF", { fabMenu = false; vm.openCreate() })
-            SheetRow(LucideIcons.Combine, "Combine files", { fabMenu = false; vm.pickFiles(io.github.artcraftandroid.pdfcraft.ui.FilePickKind.Combine) })
-            Spacer(Modifier.height(12.dp))
-        }
     }
     if (confirmClear) {
         io.github.artcraftandroid.pdfcraft.ui.PdfDialog(
@@ -261,38 +349,108 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit) {
     }
 }
 
+@Composable
+private fun HomeSectionHeader(title: String, onSeeAll: (() -> Unit)? = null) {
+    val c = pdfColors
+    Row(
+        Modifier.fillMaxWidth().padding(start = 23.dp, end = 23.dp, top = 28.dp, bottom = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = homeInk(c.dark), fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        if (onSeeAll != null) Row(Modifier.clickable(role = Role.Button, onClick = onSeeAll).padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("See all", color = homeAccent(c.dark), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(2.dp))
+            Icon(LucideIcons.ChevronRight, null, tint = homeAccent(c.dark), modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun HomeAction(icon: ImageVector, label: String, hue: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val c = pdfColors
+    Column(
+        modifier.heightIn(min = 105.dp)
+            .clip(RoundedCornerShape(19.dp)).background(c.surface)
+            .border(1.dp, homeLine(c.dark), RoundedCornerShape(19.dp))
+            .clickable(role = Role.Button, onClick = onClick).padding(14.dp)
+            .semantics { contentDescription = label },
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Box(Modifier.size(37.dp).clip(PdfShapes.Small).background(homeActionWash(hue, c.dark)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = hue, modifier = Modifier.size(21.dp))
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(label, color = homeInk(c.dark), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+    }
+}
+
+@Composable
+private fun HomeFileRow(vm: AppViewModel, r: FileRow) {
+    val c = pdfColors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 23.dp, vertical = 4.dp)
+            .clip(PdfShapes.Medium).background(c.surface)
+            .border(1.dp, if (c.dark) Color(0xFF3A4542) else Color(0xFFE5EBE8), PdfShapes.Medium)
+            .padding(start = 10.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(Modifier.weight(1f).clickable(role = Role.Button, onClick = r.open), verticalAlignment = Alignment.CenterVertically) {
+            FileThumb(vm, r.thumbPath, 40, 49)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(r.name, color = homeInk(c.dark), fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(5.dp))
+                Text(listOfNotNull(whenLabel(r.date), r.size.takeIf { it > 0 }?.let { formatSize(it) }).joinToString(" · "),
+                    color = homeMuted(c.dark), fontSize = 11.sp, maxLines = 1)
+            }
+        }
+        Box(Modifier.size(36.dp).clickable(role = Role.Button) { vm.setStarred(r.key, !r.starred) }
+            .semantics { contentDescription = if (r.starred) "Unstar ${r.name}" else "Star ${r.name}" },
+            contentAlignment = Alignment.Center) {
+            StarGlyph(r.starred, Modifier.size(19.dp))
+        }
+        BarIcon(LucideIcons.EllipsisVertical, "More options for ${r.name}", { vm.fileSheet = r to true }, size = 36.dp)
+    }
+}
+
+@Composable
+private fun StarGlyph(filled: Boolean, modifier: Modifier = Modifier) {
+    val outline = if (filled) Color(0xFFDC9B3E) else homeMuted(pdfColors.dark)
+    Canvas(modifier) {
+        val star = Path()
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f
+        for (point in 0 until 10) {
+            val angle = -PI / 2 + point * PI / 5
+            val radius = (if (point % 2 == 0) 0.46f else 0.21f) * size.minDimension
+            val x = centerX + cos(angle).toFloat() * radius
+            val y = centerY + sin(angle).toFloat() * radius
+            if (point == 0) star.moveTo(x, y) else star.lineTo(x, y)
+        }
+        star.close()
+        if (filled) drawPath(star, Color(0xFFFFDC91))
+        drawPath(star, outline, style = Stroke(width = 1.8.dp.toPx(), join = StrokeJoin.Round))
+    }
+}
+
+private fun homeAccent(dark: Boolean) = if (dark) Color(0xFF75C7B8) else Color(0xFF006F66)
+private fun homeInk(dark: Boolean) = if (dark) Color(0xFFF0F4F2) else Color(0xFF172124)
+private fun homeMuted(dark: Boolean) = if (dark) Color(0xFFAEBBB7) else Color(0xFF687477)
+private fun homeCanvas(dark: Boolean) = if (dark) Color(0xFF191E1D) else Color(0xFFFBFCFB)
+private fun homeLine(dark: Boolean) = if (dark) Color(0xFF404C49) else Color(0xFFDFE6E5)
+private fun homeIconWash(dark: Boolean) = if (dark) Color(0xFF293633) else Color(0xFFEDF2EF)
+private fun homeContinueBrush(dark: Boolean) = if (dark) Brush.linearGradient(listOf(Color(0xFF203A34), Color(0xFF1C342F)))
+    else Brush.linearGradient(listOf(Color(0xFFEFFAF5), Color(0xFFE5F4EE)))
+private fun homeContinueLine(dark: Boolean) = if (dark) Color(0xFF42695E) else Color(0xFFB8D9CB)
+private fun homeProgressTrack(dark: Boolean) = if (dark) Color(0xFF3B6057) else Color(0xFFC5DED4)
+private fun homeActionWash(hue: Color, dark: Boolean) = if (dark) tint(hue, true) else when (hue) {
+    Color(0xFF5179BD) -> Color(0xFFEDF3FB)
+    Color(0xFFD7734F) -> Color(0xFFFFF0E8)
+    else -> Color(0xFFEFEAFA)
+}
+
 /** A tool that starts by choosing a PDF. */
 enum class FileTool { Edit, ReadAloud, FillSign, Organize, Compress, Export, Protect, Comment, Crop, Ocr }
-
-/** The row of tools under "Start with a tool". */
-@Composable
-private fun ToolsCarousel(vm: AppViewModel, onBrowse: () -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        CarouselTile(LucideIcons.FolderOpen, "Open file", ToolHues.crop, onBrowse)
-        CarouselTile(LucideIcons.FilePenLine, "Edit PDF", ToolHues.edit) { vm.toolForFile(FileTool.Edit) }
-        CarouselTile(LucideIcons.Volume2, "Read aloud", ToolHues.read) { vm.toolForFile(FileTool.ReadAloud) }
-        CarouselTile(LucideIcons.Signature, "Fill & Sign", ToolHues.sign) { vm.toolForFile(FileTool.FillSign) }
-        CarouselTile(LucideIcons.FilePlus2, "Create PDF", ToolHues.create) { vm.openCreate() }
-        CarouselTile(LucideIcons.LayoutGrid, "Organize pages", ToolHues.organize) { vm.toolForFile(FileTool.Organize) }
-        CarouselTile(LucideIcons.Combine, "Combine files", ToolHues.combine) { vm.pickFiles(io.github.artcraftandroid.pdfcraft.ui.FilePickKind.Combine) }
-        CarouselTile(LucideIcons.FileArchive, "Compress PDF", ToolHues.compress) { vm.toolForFile(FileTool.Compress) }
-        CarouselTile(LucideIcons.FileOutput, "Export PDF", ToolHues.export) { vm.toolForFile(FileTool.Export) }
-        CarouselTile(LucideIcons.FileLock2, "Set password", ToolHues.protect) { vm.toolForFile(FileTool.Protect) }
-    }
-}
-
-@Composable
-private fun CarouselTile(icon: ImageVector, label: String, hue: Color, onClick: () -> Unit) {
-    val c = pdfColors
-    // 64 dp tiles 16 dp apart, the tool's hue faint behind its icon, an 11 sp name under it
-    Column(Modifier.width(64.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp).semantics { contentDescription = label }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(64.dp).clip(PdfShapes.Small).background(tint(hue, c.dark)), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = hue, modifier = Modifier.size(32.dp))
-        }
-        Spacer(Modifier.height(8.dp))
-        io.github.artcraftandroid.pdfcraft.ui.WordWrapLabel(label, c.text, size = 11.sp, lineHeight = 14.sp)
-    }
-}
 
 fun tint(hue: Color, dark: Boolean): Color =
     if (dark) Color(hue.red * 0.22f + 0.07f, hue.green * 0.22f + 0.07f, hue.blue * 0.22f + 0.09f) else Color(hue.red * 0.12f + 0.88f, hue.green * 0.12f + 0.88f, hue.blue * 0.12f + 0.88f)
@@ -364,7 +522,7 @@ fun FileListRow(vm: AppViewModel, r: FileRow, recent: Boolean = false) {
                 Text(r.name.removeSuffix(".pdf").removeSuffix(".PDF"), color = c.text, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (r.starred) {
                     Spacer(Modifier.width(6.dp))
-                    Icon(LucideIcons.Star, "Starred", tint = Color(0xFFF5B800), modifier = Modifier.size(14.dp))
+                    StarGlyph(true, Modifier.size(14.dp).semantics { contentDescription = "Starred" })
                 }
             }
             Spacer(Modifier.height(2.dp))
