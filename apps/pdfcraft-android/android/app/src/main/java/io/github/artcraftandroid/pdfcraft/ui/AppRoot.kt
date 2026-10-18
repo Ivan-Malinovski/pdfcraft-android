@@ -142,7 +142,17 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
             .background(c.surface),
     ) {
         when {
-            doc != null -> Box(Modifier.fillMaxSize().predictiveBack(backProgress, backExit, backEdge)) { ViewerScreen(vm, doc) }
+            doc != null -> {
+                // Home isn't composed behind an open document, so a back gesture would shrink the page over an empty
+                // backdrop: bring Home up beneath it for the length of the gesture (its own frost source, the viewer's is busy)
+                if (backProgress > 0f || backExit > 0f) {
+                    val homeGlass = rememberGlassSource()
+                    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides homeGlass) {
+                        Box(Modifier.fillMaxSize().glassSource(homeGlass)) { HomeRoot(vm, onBrowse) }
+                    }
+                }
+                Box(Modifier.fillMaxSize().predictiveBack(backProgress, backExit, backEdge)) { ViewerScreen(vm, doc) }
+            }
             else -> Box(Modifier.fillMaxSize().glassSource(glass)) { HomeRoot(vm, onBrowse) }
         }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
