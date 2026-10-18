@@ -256,7 +256,7 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
+            applicationIdSuffix = providers.gradleProperty("pdfcraft.debugSuffix").getOrElse(".debug")
         }
         release {
             isMinifyEnabled = true
