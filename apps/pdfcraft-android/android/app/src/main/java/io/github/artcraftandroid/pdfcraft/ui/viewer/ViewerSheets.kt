@@ -447,7 +447,7 @@ fun MoreToolsSheet(vm: AppViewModel, doc: OpenDocument) {
             return@PdfSheet
         }
         SheetTitle("More tools")
-        val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
+        val slots = quickSlots(vm.quickDock)
         val prefs = vm.quickToolbar
         val tools = prefs.bar.drop(slots) + prefs.grid
         // six to a row in 85 dp columns, as the reference lays them out

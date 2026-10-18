@@ -345,15 +345,24 @@ val QuickBarHeight = BottomBarHeight
 @Composable
 fun QuickToolbar(
     tools: List<QuickTool>,
+    slots: Int,
     onTool: (QuickTool) -> Unit,
     onMoreTools: () -> Unit,
     moreToolsOpen: Boolean,
+    /** Down a side of the screen rather than along the bottom: the tools stand one above the other. */
+    vertical: Boolean = false,
     /** How much taller than usual the tools' row is (a large font setting), in pixels. */
     onExtraHeight: (Int) -> Unit = {},
 ) {
+    val shown = tools.take(slots)
+    if (vertical) {
+        Column(Modifier.width(SideQuickItemWidth)) {
+            for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = SideQuickItemWidth)
+            QuickItem(LucideIcons.LayoutGrid, "More", onMoreTools, selected = moreToolsOpen, width = SideQuickItemWidth)
+        }
+        return
+    }
     androidx.compose.foundation.layout.BoxWithConstraints {
-        val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
-        val shown = tools.take(slots)
         val itemW = minOf(72.dp, (maxWidth - 4.dp) / maxOf(7, shown.size + 1))
         Column {
             val usual = with(androidx.compose.ui.platform.LocalDensity.current) { BottomBarHeight.roundToPx() }
@@ -368,6 +377,9 @@ fun QuickToolbar(
         }
     }
 }
+
+/** An item's width in the quick toolbar when it stands down a side of the screen. */
+val SideQuickItemWidth = 66.dp
 
 /** The 1 dp line the reference draws along the top of its bottom bars, just above them. */
 @Composable

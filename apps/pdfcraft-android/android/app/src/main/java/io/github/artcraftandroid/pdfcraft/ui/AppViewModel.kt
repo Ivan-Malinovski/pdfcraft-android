@@ -750,6 +750,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         appPrefs.edit().putBoolean("keepScreenOn", on).apply()
     }
 
+    /** Where Home's nav pill floats on wide windows: on the right edge (or the left), and how far down (0 top, 1 bottom). */
+    var navOnRight by mutableStateOf(appPrefs.getBoolean("navOnRight", true))
+        private set
+    var navY by mutableStateOf(appPrefs.getFloat("navY", 0.5f))
+        private set
+
+    fun moveNav(right: Boolean, y: Float) {
+        navOnRight = right
+        navY = y.coerceIn(0f, 1f)
+        appPrefs.edit().putBoolean("navOnRight", navOnRight).putFloat("navY", navY).apply()
+    }
+
+    /** Where the viewer's quick toolbar floats (the bottom, or a side edge) and, on a side, how far down (0 top, 1 bottom). */
+    var quickDock by mutableStateOf(io.github.artcraftandroid.pdfcraft.ui.viewer.QuickDock.of(appPrefs.getString("quickDock", null)))
+        private set
+    var quickDockY by mutableStateOf(appPrefs.getFloat("quickDockY", 0.5f))
+        private set
+
+    fun moveQuickDock(dock: io.github.artcraftandroid.pdfcraft.ui.viewer.QuickDock, y: Float) {
+        quickDock = dock
+        quickDockY = y.coerceIn(0f, 1f)
+        appPrefs.edit().putString("quickDock", dock.name).putFloat("quickDockY", quickDockY).apply()
+    }
+
     /** The viewer's keyboard shortcuts (Preferences; off until turned on, as the reference has them). */
     var keyboardShortcuts by mutableStateOf(appPrefs.getBoolean("keyboardShortcuts", false))
         private set
