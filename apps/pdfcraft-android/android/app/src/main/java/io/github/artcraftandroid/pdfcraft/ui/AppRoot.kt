@@ -101,7 +101,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     ) {
         when {
             doc != null -> ViewerScreen(vm, doc)
-            else -> Box(Modifier.fillMaxSize().glassSource(glass)) { HomeRoot(vm, onBrowse) }
+            else -> HomeRoot(vm, onBrowse, glass)
         }
         // here rather than in the file's row: a sheet inside a scrolling list has no height to fill
         if (doc == null) vm.fileSheet?.let { (r, recent) -> io.github.artcraftandroid.pdfcraft.ui.home.FileSheet(vm, r, recent) { vm.fileSheet = null } }
