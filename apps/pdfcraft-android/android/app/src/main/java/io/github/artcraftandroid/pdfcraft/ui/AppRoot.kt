@@ -90,9 +90,9 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     // Back in the viewer closes the document (saving it) and returns to Home
     androidx.activity.compose.BackHandler(enabled = doc != null && vm.toolScreen == null) { vm.closeDocument() }
     // sideways, the camera cutout and the navigation bar sit at the sides: content stays between
-    // them, on black, as the reference's does
+    // them, and the bands they leave carry the screen's own colour rather than black
     Box(
-        Modifier.fillMaxSize().background(Color.Black)
+        Modifier.fillMaxSize().background(if (doc != null) c.desk else c.home)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .background(c.surface),
     ) {
