@@ -296,7 +296,7 @@ fun SearchBar(
 
 /**
  * An item of the bottom quick toolbar, laid out as the reference does: 5 dp down, the icon in a
- * 44 dp box (shaded while its tool is open), the label straight under it, and a corner mark when
+ * 44 dp box (a pill tinted with the accent while its tool is open), the label straight under it, and a corner mark when
  * the tool has sub-tools. As the reference's, the label follows the phone's font size setting: the
  * item grows taller to hold it, and a long label wraps onto a second line (in a fixed height, a
  * large font setting cut the labels off at the bottom).
@@ -304,6 +304,7 @@ fun SearchBar(
 @Composable
 private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, subTools: Boolean = false, selected: Boolean = false, width: Dp) {
     val c = pdfColors
+    val accent = io.github.artcraftandroid.pdfcraft.ui.home.homeAccent(c.dark)
     val tick = tickOnClick(onClick)
     Column(
         Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = label }
@@ -311,10 +312,10 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) c.divider else Color.Transparent, PdfShapes.Small),
+            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) io.github.artcraftandroid.pdfcraft.ui.home.tint(accent, c.dark) else Color.Transparent, PdfShapes.Pill),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, tint = c.icon, modifier = Modifier.size(24.dp))
+            Icon(icon, null, tint = if (selected) accent else c.icon, modifier = Modifier.size(24.dp))
             if (subTools) {
                 // the small corner triangle: this tool has a row of sub-tools
                 val tint = c.cornerMark
@@ -328,7 +329,7 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
         // tighter letters its width; lines close together, so a wrapped label stays one block, and
         // a word too wide for its slot (a very large font setting) shrinks rather than splits
         io.github.artcraftandroid.pdfcraft.ui.WordWrapLabel(
-            label, c.label, size = 10.5.sp, lineHeight = 13.sp, letterSpacing = (-0.5).sp,
+            label, if (selected) accent else c.label, size = 10.5.sp, lineHeight = 13.sp, letterSpacing = (-0.5).sp,
             modifier = Modifier.padding(top = 2.5.dp),
         )
     }

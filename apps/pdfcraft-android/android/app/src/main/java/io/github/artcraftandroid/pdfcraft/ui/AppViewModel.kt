@@ -1903,6 +1903,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var lastScan = 0L
 
+    /** Files changed after this are "new" on Home; 0 until the first scan, which starts it from then on. */
+    private var localSeen by mutableStateOf(appPrefs.getLong("localSeen", 0L))
+
+    /** Home's prompt to add a folder was dismissed. */
+    var folderPromptDismissed by mutableStateOf(appPrefs.getBoolean("folderPromptDismissed", false))
+        private set
+
+    /** PDFs on the phone that arrived since Home last showed them and were never opened here. */
+    fun newLocalRows(): List<io.github.artcraftandroid.pdfcraft.ui.home.FileRow> {
+        if (localSeen == 0L) return emptyList()
+        val known = recentList.flatMap { listOf(it.uri, sameFile(it.name, it.size)) }.toSet()
+        return localRows().filter { it.date > localSeen && it.key !in known && sameFile(it.name, it.size) !in known }
+    }
+
+    /** The banner's files were shown or dismissed: only later ones count as new. */
+    fun markLocalSeen() {
+        localSeen = System.currentTimeMillis()
+        appPrefs.edit().putLong("localSeen", localSeen).apply()
+    }
+
+    fun dismissFolderPrompt() {
+        folderPromptDismissed = true
+        appPrefs.edit().putBoolean("folderPromptDismissed", true).apply()
+    }
+
     /** The app's version, as the About page shows it. */
     val appVersion: String = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "?"
 
@@ -1916,6 +1941,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             scanning = true
             localFiles = withContext(Dispatchers.IO) { io.github.artcraftandroid.pdfcraft.engine.LocalFiles.scan(getApplication()) }
             scanning = false
+            if (localSeen == 0L) markLocalSeen()
         }
     }
 
@@ -1948,9 +1974,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Back from the access page (or the app resumed): look again. */
     fun onResumed() {
-        val had = hasFileAccess
         hasFileAccess = io.github.artcraftandroid.pdfcraft.engine.LocalFiles.hasAccess(getApplication())
-        if (hasFileAccess && !had) scanLocal(force = true)
+        if (hasFileAccess) scanLocal(force = true)
         refreshRecents()
     }
 
