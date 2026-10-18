@@ -224,11 +224,16 @@ fun ToolsTab(vm: AppViewModel) {
 @Composable
 fun SearchTab(vm: AppViewModel) {
     val c = pdfColors
+    BackHandler { vm.homeTab = HomeTab.Home }
     var query by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.scanLocal() }
     Column(Modifier.fillMaxSize().safeTopPadding()) {
+        Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+            BarIcon(LucideIcons.ArrowLeft, "Back to Home", { vm.homeTab = HomeTab.Home })
+            Text("Search", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clip(CircleShape).background(c.surfaceRaised).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(LucideIcons.Search, null, tint = c.textSecondary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
