@@ -70,7 +70,7 @@ import kotlin.math.roundToInt
  * [title] in More tools, [subTools] when it opens a row of sub-tools (the bar's corner mark).
  */
 enum class QuickTool(val id: String, val label: String, val title: String, val icon: ImageVector, val hue: Color, val subTools: Boolean = false) {
-    Edit("edit", "Edit PDF", "Edit PDF", LucideIcons.FilePenLine, ToolHues.edit),
+    Edit("edit", "Edit", "Edit PDF", LucideIcons.FilePenLine, ToolHues.edit),
     Comment("comment", "Comment", "Comment", LucideIcons.MessageSquareText, ToolHues.comment, subTools = true),
     Highlight("highlight", "Highlight", "Highlight", LucideIcons.Highlighter, ToolHues.text, subTools = true),
     Draw("draw", "Draw", "Draw", LucideIcons.PenLine, ToolHues.sign),

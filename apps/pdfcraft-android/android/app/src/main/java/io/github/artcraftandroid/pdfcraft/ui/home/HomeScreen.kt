@@ -159,7 +159,7 @@ private fun BottomNav(selected: HomeTab, modifier: Modifier = Modifier, onSelect
     val c = pdfColors
     val accent = homeAccent(c.dark)
     Row(
-        modifier.height(HomeNavHeight).floatingSurface(PdfShapes.Pill).padding(horizontal = 6.dp),
+        modifier.height(HomeNavHeight).floatingSurface(PdfShapes.Pill).padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         for (t in listOf(HomeTab.Home, HomeTab.Files, HomeTab.Tools)) {
@@ -179,8 +179,7 @@ private fun BottomNav(selected: HomeTab, modifier: Modifier = Modifier, onSelect
                 verticalArrangement = Arrangement.Center,
             ) {
                 Icon(icon, null, tint = iconTint, modifier = Modifier.size(21.dp))
-                Spacer(Modifier.height(3.dp))
-                Text(t.label, color = iconTint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(t.label, color = iconTint, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
