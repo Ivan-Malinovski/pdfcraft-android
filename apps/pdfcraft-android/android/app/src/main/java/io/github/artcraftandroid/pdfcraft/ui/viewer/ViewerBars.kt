@@ -99,7 +99,7 @@ val ToolBarContentHeight: Dp get() = BottomBarHeight - BubbleInsetBottom
 val TopBubbleReserve = TopBarHeight + FloatEdge + 6.dp
 
 /** The air inside the bottom bubble, so the end tools and the labels keep clear of its rounded corners. */
-val BubbleInsetX = 6.dp
+val BubbleInsetX = 12.dp
 val BubbleInsetBottom = 10.dp
 
 /**
@@ -308,11 +308,12 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
     val tick = tickOnClick(onClick)
     Column(
         Modifier.width(width).heightIn(min = BottomBarHeight).clickable(role = Role.Button, onClick = tick).semantics { contentDescription = label }
-            .padding(horizontal = 2.dp, vertical = 5.dp),
+            .padding(start = 2.dp, end = 2.dp, top = BubbleInsetBottom),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            Modifier.size(44.dp).offset(y = 2.5.dp).background(if (selected) io.github.artcraftandroid.pdfcraft.ui.home.tint(accent, c.dark) else Color.Transparent, PdfShapes.Pill),
+            Modifier.size(width = 44.dp, height = 34.dp).background(if (selected) io.github.artcraftandroid.pdfcraft.ui.home.tint(accent, c.dark) else Color.Transparent, PdfShapes.Pill),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, null, tint = if (selected) accent else c.icon, modifier = Modifier.size(24.dp))
@@ -330,7 +331,7 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
         // a word too wide for its slot (a very large font setting) shrinks rather than splits
         io.github.artcraftandroid.pdfcraft.ui.WordWrapLabel(
             label, if (selected) accent else c.label, size = 10.5.sp, lineHeight = 13.sp, letterSpacing = (-0.5).sp,
-            modifier = Modifier.padding(top = 2.5.dp),
+            modifier = Modifier.padding(top = 1.dp),
         )
     }
 }
