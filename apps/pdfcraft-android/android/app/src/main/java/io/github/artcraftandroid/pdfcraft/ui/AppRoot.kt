@@ -63,6 +63,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.artcraftandroid.pdfcraft.ui.home.HomeRoot
+import io.github.artcraftandroid.pdfcraft.ui.home.HomeTab
+import io.github.artcraftandroid.pdfcraft.ui.home.homeCanvas
 import io.github.artcraftandroid.pdfcraft.ui.home.SettingsScreen
 import io.github.artcraftandroid.pdfcraft.ui.viewer.SignaturePadScreen
 import io.github.artcraftandroid.pdfcraft.ui.viewer.ViewerScreen
@@ -137,7 +139,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     // sideways, the camera cutout and the navigation bar sit at the sides: content stays between
     // them, and the bands they leave carry the screen's own colour rather than black
     Box(
-        Modifier.fillMaxSize().background(if (doc != null) c.desk else c.home)
+        Modifier.fillMaxSize().background(if (doc != null) c.desk else if (vm.homeTab == HomeTab.Home) homeCanvas(c.dark) else c.home)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .background(c.surface),
     ) {
