@@ -262,21 +262,13 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit, onOpenFab: () 
                                 Spacer(Modifier.width(16.dp))
                                 Column(Modifier.weight(1f)) {
                                     val pages = last.pages.coerceAtLeast(1)
-                                    val atEnd = last.lastPage + 1 >= pages
                                     Text(last.name.removeSuffix(".pdf").removeSuffix(".PDF"), color = homeInk(c.dark), fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     Spacer(Modifier.height(5.dp))
                                     Text("Page ${last.lastPage + 1} of $pages · ${(((last.lastPage + 1) * 100) / pages).coerceIn(0, 100)}%", color = homeInk(c.dark), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                     Text(agoLabel(last.opened), color = homeMuted(c.dark), fontSize = 12.sp)
-                                    Spacer(Modifier.height(12.dp))
-                                    Row(
-                                        Modifier.clip(PdfShapes.Pill).background(homeAccent(c.dark)).padding(horizontal = 13.dp, vertical = 7.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(LucideIcons.Play, null, tint = if (c.dark) Color(0xFF0D1F1C) else Color.White, modifier = Modifier.size(13.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(if (atEnd) "Open again" else "Resume on page ${last.lastPage + 1}", color = if (c.dark) Color(0xFF0D1F1C) else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
                                 }
+                                Spacer(Modifier.width(8.dp))
+                                Icon(LucideIcons.ChevronRight, null, tint = homeAccent(c.dark), modifier = Modifier.size(24.dp))
                             }
                         }
                     }
