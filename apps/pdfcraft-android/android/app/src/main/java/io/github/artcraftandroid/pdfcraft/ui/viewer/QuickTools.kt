@@ -48,7 +48,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -100,6 +99,16 @@ fun toolbarSlots(widthDp: Int): Int = when {
     widthDp >= 768 -> 8
     widthDp >= 460 -> 7
     else -> 6
+}
+
+/** How many tools fit on a bar standing down a side of a screen [heightDp] tall, beside More tools (clear of the top bubble and the nav bar). */
+fun sideSlots(heightDp: Int): Int = ((heightDp - 110) / 70 - 1).coerceIn(1, 8)
+
+/** How many tools the quick toolbar holds where it is docked: the bar, More tools and Customize toolbar all go by this. */
+@androidx.compose.runtime.Composable
+fun quickSlots(dock: QuickDock): Int {
+    val window = io.github.artcraftandroid.pdfcraft.ui.LocalWindowSize.current
+    return if (dock.side) sideSlots(window.heightDp) else toolbarSlots(window.widthDp)
 }
 
 /** The bar's tools and More tools' order, as the user arranged them (kept in the app's preferences). */
@@ -166,7 +175,7 @@ fun AppViewModel.runQuickTool(doc: OpenDocument, tool: QuickTool) {
 fun CustomizeToolbar(vm: AppViewModel, onDone: () -> Unit) {
     val c = pdfColors
     val prefs = vm.quickToolbar
-    val slots = toolbarSlots(LocalConfiguration.current.screenWidthDp)
+    val slots = quickSlots(vm.quickDock)
     val bar = remember { prefs.bar.take(slots).toMutableStateList() }
     val grid = remember { mutableStateListOf<QuickTool>().apply { addAll(QuickToolbarPrefs.complete(prefs.grid + prefs.bar.drop(slots), bar)) } }
     val rects = remember { mutableStateMapOf<QuickTool, Rect>() }

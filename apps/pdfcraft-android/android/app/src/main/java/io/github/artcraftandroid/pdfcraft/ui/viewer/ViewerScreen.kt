@@ -14,7 +14,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,6 +31,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsTopHeight
@@ -127,7 +134,16 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     val topPx = with(density) { TopBubbleReserve.toPx() }
     // the quick toolbar grows with a large font setting: the page area leaves room for that too
     var quickExtraPx by remember { mutableIntStateOf(0) }
-    val bottomPx = with(density) { (if (ctl.tool == ViewerTool.None) QuickBarHeight.toPx() + quickExtraPx else BottomBarHeight.toPx()) + FloatEdge.toPx() + BubbleInsetBottom.toPx() }
+    // the quick toolbar can be moved from the bottom to a side edge; there it leaves the pages' bottom free
+    val dock = vm.quickDock
+    val quickAtBottom = ctl.tool != ViewerTool.None || !dock.side
+    val bottomPx = with(density) { (if (ctl.tool != ViewerTool.None) BottomBarHeight.toPx() else if (dock.side) 0f else QuickBarHeight.toPx() + quickExtraPx) + FloatEdge.toPx() + BubbleInsetBottom.toPx() }
+    val haptics = io.github.artcraftandroid.pdfcraft.ui.rememberHaptics()
+    val quickDrag = remember(vm) { QuickDrag(scope, onGrab = { haptics.pickUp() }, onDrop = { d, y -> vm.moveQuickDock(d, y) }) }
+    quickDrag.topGap = topPx
+    quickDrag.margin = with(density) { FloatSide.toPx() }
+    quickDrag.bottomGap = navPx + with(density) { FloatEdge.toPx() }
+    quickDrag.sideHeight = with(density) { (QuickBarHeight * (sideSlots(LocalConfiguration.current.screenHeightDp) + 1) + BubbleInsetBottom).toPx() }
     // keyed on the document too: one opened over another (Create, Combine) has a fresh page view
     LaunchedEffect(doc, statusPx, navPx, topPx, ctl.searching, ctl.tool, vm.readingMode, bottomPx) {
         val bottomShown = !ctl.searching && !vm.readingMode
@@ -156,7 +172,6 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         }
     }
     // a light tick as a page is reached in single-page mode (a swipe or the scrubber), as a detent
-    val haptics = io.github.artcraftandroid.pdfcraft.ui.rememberHaptics()
     LaunchedEffect(doc) {
         var last = doc.viewer.currentPage
         snapshotFlow { doc.viewer.currentPage }.collect {
@@ -199,7 +214,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
     // a magnifier over the text while a selection handle is dragged, as the reference shows one
     androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
     Box(
-        Modifier.fillMaxSize().background(c.desk).magnifier(
+        Modifier.fillMaxSize().onSizeChanged { quickDrag.screen = it }.background(c.desk).magnifier(
             sourceCenter = { selection.magnifierAt ?: Offset.Unspecified },
             magnifierCenter = { selection.magnifierAt?.let { it - Offset(0f, with(density) { 56.dp.toPx() }) } ?: Offset.Unspecified },
             zoom = 1.25f,
@@ -388,14 +403,15 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         if (vm.readAloud == null && vm.fieldActions == null) Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).then(if (vm.editing != null) Modifier.imePadding() else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
             vm.success?.let { SuccessBannerView(it, onClose = { vm.success = null }) }
             AnimatedVisibility(
-                ctl.barsVisible && !ctl.searching && !vm.readingMode,
+                ctl.barsVisible && !ctl.searching && !vm.readingMode && quickAtBottom,
                 enter = slideInVertically(PdfMotion.barsIn()) { it } + fadeIn(tween(PdfMotion.BARS_FADE_MS)),
                 exit = slideOutVertically(PdfMotion.barsOut()) { it } + fadeOut(tween(PdfMotion.BARS_FADE_MS)),
             ) {
-                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Pill).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
+                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).then(if (ctl.tool == ViewerTool.None) Modifier.quickMovable(quickDrag, side = false) else Modifier).floatingSurface(PdfShapes.Pill).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
                     if (ctl.tool == ViewerTool.None) {
                         QuickToolbar(
                             tools = vm.quickToolbar.bar,
+                            slots = quickSlots(QuickDock.Bottom),
                             onTool = { vm.runQuickTool(doc, it) },
                             onMoreTools = { ctl.sheet = if (ctl.sheet == ViewerSheet.MoreTools) ViewerSheet.None else ViewerSheet.MoreTools },
                             moreToolsOpen = ctl.sheet == ViewerSheet.MoreTools,
@@ -404,6 +420,28 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                     } else {
                         Box(Modifier.padding(top = BubbleInsetBottom)) { ToolSubToolbar(vm, doc) }
                     }
+                }
+            }
+        }
+
+        // the quick toolbar docked on a side edge: a vertical pill, with the tools that fit the height
+        if (vm.readAloud == null && vm.fieldActions == null && ctl.tool == ViewerTool.None && dock.side) {
+            val margin = with(density) { FloatSide.toPx() }
+            AnimatedVisibility(
+                ctl.barsVisible && !ctl.searching && !vm.readingMode,
+                modifier = Modifier.sideDocked(dock, vm.quickDockY, quickDrag.topGap, quickDrag.bottomGap, margin),
+                enter = slideInHorizontally(PdfMotion.barsIn()) { if (dock == QuickDock.Left) -it else it } + fadeIn(tween(PdfMotion.BARS_FADE_MS)),
+                exit = slideOutHorizontally(PdfMotion.barsOut()) { if (dock == QuickDock.Left) -it else it } + fadeOut(tween(PdfMotion.BARS_FADE_MS)),
+            ) {
+                Column(Modifier.quickMovable(quickDrag, side = true).floatingSurface(PdfShapes.Pill).padding(horizontal = 6.dp).padding(bottom = BubbleInsetBottom)) {
+                    QuickToolbar(
+                        tools = vm.quickToolbar.bar,
+                        slots = quickSlots(dock),
+                        onTool = { vm.runQuickTool(doc, it) },
+                        onMoreTools = { ctl.sheet = if (ctl.sheet == ViewerSheet.MoreTools) ViewerSheet.None else ViewerSheet.MoreTools },
+                        moreToolsOpen = ctl.sheet == ViewerSheet.MoreTools,
+                        vertical = true,
+                    )
                 }
             }
         }
