@@ -336,22 +336,11 @@ private fun QuickItem(icon: ImageVector, label: String, onClick: () -> Unit, sub
     }
 }
 
-/** The strip above the quick toolbar's tools that holds its handle. */
-val QuickHandleHeight = 22.dp
-
-/** The handle's touch target: wide enough to hit, narrower than the smallest bar (More alone). */
-private val QuickHandleWidth = 72.dp
-
-/** The quick toolbar's height with its handle, the shortcuts folded away. */
-val QuickBarHeight = BottomBarHeight + QuickHandleHeight
-
-/** A shortcut in the row the quick toolbar's handle pulls up. */
-class QuickChip(val label: String, val icon: ImageVector, val tint: Color, val onClick: () -> Unit)
+/** The quick toolbar's height. */
+val QuickBarHeight = BottomBarHeight
 
 /**
- * The quick toolbar: a handle, then the tools the user keeps there (the reference's six at first)
- * and More tools. Pulling the handle up (or tapping it) shows a row of [chips] above the tools,
- * scrolling sideways; pulling it down folds them away. No line along its top, as the reference.
+ * The quick toolbar: the tools the user keeps there and More tools.
  */
 @Composable
 fun QuickToolbar(
@@ -359,73 +348,24 @@ fun QuickToolbar(
     onTool: (QuickTool) -> Unit,
     onMoreTools: () -> Unit,
     moreToolsOpen: Boolean,
-    chips: List<QuickChip> = emptyList(),
     /** How much taller than usual the tools' row is (a large font setting), in pixels. */
     onExtraHeight: (Int) -> Unit = {},
 ) {
-    val c = pdfColors
-    var open by remember { androidx.compose.runtime.mutableStateOf(false) }
-    // the bubble is as wide as the tools in it (fewer pinned shortcuts, a narrower pill); the shortcut chips follow that width
-    var toolsWidthPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     androidx.compose.foundation.layout.BoxWithConstraints {
         val slots = toolbarSlots(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
         val shown = tools.take(slots)
         val itemW = minOf(72.dp, (maxWidth - 4.dp) / maxOf(7, shown.size + 1))
-        Column(
-            Modifier.pointerInput(chips.isNotEmpty()) {
-                if (chips.isEmpty()) return@pointerInput
-                var pulled = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { pulled = 0f },
-                    onDragEnd = { if (pulled < -8f) open = true else if (pulled > 8f) open = false },
-                ) { _, dy -> pulled += dy }
-            },
-        ) {
-            Box(
-                Modifier.align(Alignment.CenterHorizontally).width(QuickHandleWidth).height(QuickHandleHeight)
-                    .clickable(enabled = chips.isNotEmpty(), role = Role.Button) { open = !open }
-                    .semantics { contentDescription = if (open) "Hide shortcuts" else "Show shortcuts" },
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                // measured on the dark bar; the light bar's grey is our own match
-                val handle = if (c.dark) Color(0xFFA6A6A6) else Color(0xFFC4C4C4)
-                Box(Modifier.padding(top = 15.dp).size(40.dp, 4.dp).background(handle, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
-            }
-            androidx.compose.animation.AnimatedVisibility(open && chips.isNotEmpty()) {
-                Row(
-                    Modifier.then(if (toolsWidthPx > 0) Modifier.width(with(androidx.compose.ui.platform.LocalDensity.current) { toolsWidthPx.toDp() }) else Modifier.fillMaxWidth())
-                        .horizontalScroll(androidx.compose.foundation.rememberScrollState())
-                        .padding(start = 18.dp, end = 18.dp, top = 5.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(11.dp),
-                ) { for (chip in chips) QuickChipView(chip) }
-            }
+        Column {
             val usual = with(androidx.compose.ui.platform.LocalDensity.current) { BottomBarHeight.roundToPx() }
             Row(
                 Modifier.heightIn(min = BottomBarHeight)
-                    .onSizeChanged { toolsWidthPx = it.width; onExtraHeight((it.height - usual).coerceAtLeast(0)) },
+                    .onSizeChanged { onExtraHeight((it.height - usual).coerceAtLeast(0)) },
                 horizontalArrangement = Arrangement.Center,
             ) {
                 for (t in shown) QuickItem(t.icon, t.label, { onTool(t) }, subTools = t.subTools, width = itemW)
                 QuickItem(LucideIcons.LayoutGrid, "More", onMoreTools, selected = moreToolsOpen, width = itemW)
             }
         }
-    }
-}
-
-/** One shortcut: its coloured icon and name on a dark rounded box, 37 dp tall. */
-@Composable
-private fun QuickChipView(chip: QuickChip) {
-    val c = pdfColors
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
-    Row(
-        Modifier.heightIn(min = 37.dp).clip(shape).background(if (c.dark) Color(0xFF080808) else Color(0xFFEDEDED))
-            .clickable(role = Role.Button, onClick = chip.onClick).padding(start = 7.dp, end = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // sized against the reference: its icon draws about 18 dp, its name 14 sp in a narrower face
-        Icon(chip.icon, null, tint = chip.tint, modifier = Modifier.size(21.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(chip.label, color = c.text, fontSize = 14.sp, letterSpacing = (-0.65).sp, maxLines = 1)
     }
 }
 
