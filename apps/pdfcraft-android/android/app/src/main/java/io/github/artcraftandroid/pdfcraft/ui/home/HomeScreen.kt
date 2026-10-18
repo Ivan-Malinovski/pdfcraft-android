@@ -3,7 +3,9 @@ package io.github.artcraftandroid.pdfcraft.ui.home
 import io.github.artcraftandroid.pdfcraft.ui.FloatEdge
 import io.github.artcraftandroid.pdfcraft.ui.FloatSide
 import io.github.artcraftandroid.pdfcraft.ui.floatingSurface
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.asPaddingValues
+import io.github.artcraftandroid.pdfcraft.ui.LocalWindowSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import io.github.artcraftandroid.pdfcraft.ui.PdfShapes
 import io.github.artcraftandroid.pdfcraft.ui.GlassSource
@@ -116,20 +118,29 @@ fun HomeRoot(vm: AppViewModel, onBrowse: () -> Unit, glass: GlassSource) {
     val c = pdfColors
     var fabMenu by remember { mutableStateOf(false) }
     // Home and its tabs sit on the reference's home background: white, or black in dark mode
-    val reserve = HomeNavHeight + FloatEdge * 2 + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // on a wide window the nav is a vertical pill on a side edge (movable); otherwise it floats at the foot
+    val sideNav = LocalWindowSize.current.twoPane
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val reserve = if (sideNav) navBottom + FloatEdge else HomeNavHeight + FloatEdge * 2 + navBottom
+    val side = if (sideNav) SideNavReserve else 0.dp
+    val sideInset = if (vm.navOnRight) PaddingValues(end = side) else PaddingValues(start = side)
     Box(Modifier.fillMaxSize()) {
         // the tabs run under the floating nav; each leaves [reserve] at the foot of its list
-        androidx.compose.runtime.CompositionLocalProvider(LocalHomeNavReserve provides reserve) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalHomeNavReserve provides reserve, LocalHomeSideInset provides sideInset) {
             Box(Modifier.fillMaxSize().background(c.home).glassSource(glass)) {
-                when (vm.homeTab) {
-                    HomeTab.Home -> HomeTabScreen(vm, onBrowse) { fabMenu = true }
-                    HomeTab.Files -> FilesTab(vm, onBrowse)
-                    HomeTab.Tools -> ToolsTab(vm)
-                    HomeTab.Search -> SearchTab(vm)
+                // Home pads itself, inside its own background; the other tabs sit on the plain one
+                Box(Modifier.fillMaxSize().then(if (vm.homeTab == HomeTab.Home) Modifier else Modifier.padding(sideInset))) {
+                    when (vm.homeTab) {
+                        HomeTab.Home -> HomeTabScreen(vm, onBrowse) { fabMenu = true }
+                        HomeTab.Files -> FilesTab(vm, onBrowse)
+                        HomeTab.Tools -> ToolsTab(vm)
+                        HomeTab.Search -> SearchTab(vm)
+                    }
                 }
             }
         }
-        BottomNav(vm.homeTab, Modifier.align(Alignment.BottomCenter).padding(bottom = FloatEdge).navigationBarsPadding()) { vm.homeTab = it }
+        if (sideNav) SideNav(vm, vm.homeTab, Modifier.statusBarsPadding().navigationBarsPadding()) { vm.homeTab = it }
+        else BottomNav(vm.homeTab, Modifier.align(Alignment.BottomCenter).padding(bottom = FloatEdge).navigationBarsPadding()) { vm.homeTab = it }
         if (fabMenu) {
             PdfSheet(onDismiss = { fabMenu = false }, dim = true) {
                 SheetRow(LucideIcons.FolderOpen, "Open file", { fabMenu = false; onBrowse() })
@@ -147,6 +158,9 @@ fun HomeRoot(vm: AppViewModel, onBrowse: () -> Unit, glass: GlassSource) {
 /** How much room the lists leave at their foot for the floating nav (see [HomeNavHeight]). */
 val LocalHomeNavReserve = androidx.compose.runtime.compositionLocalOf { 0.dp }
 
+/** How much room Home leaves beside its content for a nav pill on a side edge. */
+val LocalHomeSideInset = androidx.compose.runtime.compositionLocalOf { PaddingValues() }
+
 /** The nav's height; the lists leave this much (plus its margins) clear at their foot. */
 val HomeNavHeight = 64.dp
 
@@ -156,32 +170,11 @@ val HomeNavHeight = 64.dp
  */
 @Composable
 private fun BottomNav(selected: HomeTab, modifier: Modifier = Modifier, onSelect: (HomeTab) -> Unit) {
-    val c = pdfColors
-    val accent = homeAccent(c.dark)
     Row(
         modifier.height(HomeNavHeight).floatingSurface(PdfShapes.Pill).padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        for (t in listOf(HomeTab.Home, HomeTab.Files, HomeTab.Tools)) {
-            val icon = when (t) {
-                HomeTab.Home -> LucideIcons.House
-                HomeTab.Files -> LucideIcons.Folder
-                HomeTab.Tools -> LucideIcons.LayoutGrid
-                HomeTab.Search -> LucideIcons.Search
-            }
-            val active = t == selected || (t == HomeTab.Home && selected == HomeTab.Search)
-            val iconTint = if (active) accent else c.textSecondary
-            Column(
-                Modifier.width(86.dp).height(52.dp).clip(PdfShapes.Pill)
-                    .background(if (active) tint(accent, c.dark) else Color.Transparent)
-                    .clickable(role = Role.Tab) { onSelect(t) }.semantics { contentDescription = t.label },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(icon, null, tint = iconTint, modifier = Modifier.size(21.dp))
-                Text(t.label, color = iconTint, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
+        for (t in NavTabs) NavTab(t, selected, 86.dp, onSelect)
     }
 }
 
@@ -208,7 +201,7 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit, onOpenFab: () 
         ) { Text("They are removed from this phone.", color = c.text, fontSize = 14.sp) }
     }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().background(if (tab == -1) homeCanvas(c.dark) else c.home).safeTopPadding()) {
+        Column(Modifier.fillMaxSize().background(if (tab == -1) homeCanvas(c.dark) else c.home).padding(LocalHomeSideInset.current).safeTopPadding()) {
             if (vm.selectedFiles.isNotEmpty()) SelectionBar(vm, recent = tab == 0, onDelete = { confirmDeleteSelected = true }) else
             Row(Modifier.fillMaxWidth().height(if (tab == -1) 74.dp else 56.dp).padding(start = if (tab == -1) 23.dp else 16.dp, end = if (tab == -1) 23.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(if (tab == -1) 39.dp else 28.dp)
@@ -374,7 +367,7 @@ private fun HomeTabScreen(vm: AppViewModel, onBrowse: () -> Unit, onOpenFab: () 
             containerColor = c.button,
             contentColor = Color.White,
             shape = CircleShape,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalHomeNavReserve.current).semantics { contentDescription = "Tools" },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalHomeNavReserve.current).padding(LocalHomeSideInset.current).semantics { contentDescription = "Tools" },
         ) { Icon(LucideIcons.Plus, null, modifier = Modifier.size(26.dp)) }
     }
     if (confirmClear) {

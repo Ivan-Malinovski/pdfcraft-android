@@ -133,7 +133,7 @@ fun AppRoot(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> 
     }
     // what floats above Home or the viewer (sheets, the snackbar, the viewer's bars) frosts the screen below it
     val glass = rememberGlassSource()
-    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalGlassSource provides glass, LocalWindowSize provides rememberWindowSize()) {
     // sideways, the camera cutout and the navigation bar sit at the sides: content stays between
     // them, on black, as the reference's does
     Box(

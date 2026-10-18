@@ -750,6 +750,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         appPrefs.edit().putBoolean("keepScreenOn", on).apply()
     }
 
+    /** Where Home's nav pill floats on wide windows: on the right edge (or the left), and how far down (0 top, 1 bottom). */
+    var navOnRight by mutableStateOf(appPrefs.getBoolean("navOnRight", true))
+        private set
+    var navY by mutableStateOf(appPrefs.getFloat("navY", 0.5f))
+        private set
+
+    fun moveNav(right: Boolean, y: Float) {
+        navOnRight = right
+        navY = y.coerceIn(0f, 1f)
+        appPrefs.edit().putBoolean("navOnRight", navOnRight).putFloat("navY", navY).apply()
+    }
+
     /** The viewer's keyboard shortcuts (Preferences; off until turned on, as the reference has them). */
     var keyboardShortcuts by mutableStateOf(appPrefs.getBoolean("keyboardShortcuts", false))
         private set
