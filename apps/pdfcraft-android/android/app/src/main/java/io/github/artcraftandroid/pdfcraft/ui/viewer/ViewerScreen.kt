@@ -392,7 +392,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                 enter = slideInVertically(PdfMotion.barsIn()) { it } + fadeIn(tween(PdfMotion.BARS_FADE_MS)),
                 exit = slideOutVertically(PdfMotion.barsOut()) { it } + fadeOut(tween(PdfMotion.BARS_FADE_MS)),
             ) {
-                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Bubble).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
+                Column(Modifier.navigationBarsPadding().padding(start = FloatSide, end = FloatSide, bottom = FloatEdge).floatingSurface(PdfShapes.Pill).padding(start = BubbleInsetX, end = BubbleInsetX, bottom = BubbleInsetBottom)) {
                     if (ctl.tool == ViewerTool.None) {
                         QuickToolbar(
                             tools = vm.quickToolbar.bar,

@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -141,7 +142,7 @@ private fun OnThisDevice(vm: AppViewModel) {
             else EmptyState(LucideIcons.FileText, "No PDFs in your folders", "PDFs in the folders you added will appear here.", "Add a folder") { vm.requestFileAccess() }
             return@Column
         }
-        LazyColumn(Modifier.weight(1f)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalHomeNavReserve.current)) {
             val groups = rows.groupBy { it.location }
             for ((folder, list) in groups) {
                 item(key = "h-$folder") {
@@ -199,7 +200,7 @@ fun ToolsTab(vm: AppViewModel) {
         }
         Spacer(Modifier.height(16.dp))
         LazyVerticalGrid(
-            GridCells.Adaptive(140.dp), modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+            GridCells.Adaptive(140.dp), modifier = Modifier.weight(1f).padding(horizontal = 16.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalHomeNavReserve.current),
             horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             items(tools.filter { cat == "All" || cat in it.categories }.sortedBy { t -> CategoryOrder[cat]?.indexOf(t.name)?.takeIf { it >= 0 } ?: Int.MAX_VALUE }) { t ->
@@ -228,7 +229,9 @@ fun SearchTab(vm: AppViewModel) {
     var query by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(0) }
     var menu by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { vm.scanLocal() }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // the field on Home was the tap that brought us here, so the keyboard comes up straight away
+    LaunchedEffect(Unit) { vm.scanLocal(); focus.requestFocus() }
     Column(Modifier.fillMaxSize().safeTopPadding()) {
         Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
             BarIcon(LucideIcons.ArrowLeft, "Back to Home", { vm.homeTab = HomeTab.Home })
@@ -242,7 +245,7 @@ fun SearchTab(vm: AppViewModel) {
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { vm.addRecentSearch(query) }),
                 textStyle = TextStyle(fontFamily = Inter, fontSize = 16.sp, color = c.text), cursorBrush = SolidColor(c.accent),
-                modifier = Modifier.weight(1f).semantics { contentDescription = "Search your files" },
+                modifier = Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = "Search your files" },
                 decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search your files", color = c.textSecondary, fontSize = 16.sp); inner() } },
             )
             if (query.isNotEmpty()) BarIcon(LucideIcons.X, "Clear", { query = "" }, size = 32.dp)
@@ -258,7 +261,7 @@ fun SearchTab(vm: AppViewModel) {
                 Text("Recent searches", color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 Text("Clear", color = c.toolAccent, fontSize = 15.sp, modifier = Modifier.clickable { vm.clearRecentSearches() }.padding(12.dp))
             }
-            LazyColumn(Modifier.weight(1f)) {
+            LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalHomeNavReserve.current)) {
                 items(recent, key = { it }) { q ->
                     Row(Modifier.fillMaxWidth().height(52.dp).clickable { query = q }.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(LucideIcons.Clock, null, tint = c.icon, modifier = Modifier.size(22.dp))
@@ -303,7 +306,7 @@ fun SearchTab(vm: AppViewModel) {
         if (results.isEmpty()) {
             EmptyState(LucideIcons.FileSearch, "No results", "Check the spelling, or try a shorter name.")
         } else {
-            LazyColumn(Modifier.weight(1f)) { items(results, key = { it.key }) { r -> FileListRow(vm, r) } }
+            LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalHomeNavReserve.current)) { items(results, key = { it.key }) { r -> FileListRow(vm, r) } }
         }
     }
 }
